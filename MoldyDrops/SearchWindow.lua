@@ -63,6 +63,40 @@ local function CreateBaseFrame(name)
   return f
 end
 
+-- A thin vertical scrollbar. onScroll(offset) is called when it's dragged;
+-- bar:Update(offset, maxOffset) moves it to match (hidden when nothing to scroll).
+local function CreateScrollBar(parent, onScroll, onWheel)
+  local bar = CreateFrame("Slider", nil, parent)
+  bar:SetOrientation("VERTICAL")
+  bar:SetWidth(10)
+  bar:SetValueStep(1)
+  if bar.SetObeyStepOnDrag then bar:SetObeyStepOnDrag(true) end
+  local track = bar:CreateTexture(nil, "BACKGROUND")
+  track:SetAllPoints()
+  track:SetColorTexture(0, 0, 0, 0.4)
+  local thumb = bar:CreateTexture(nil, "OVERLAY")
+  thumb:SetColorTexture(0.75, 0.65, 0.3, 0.9)
+  thumb:SetSize(10, 28)
+  bar:SetThumbTexture(thumb)
+  bar:SetMinMaxValues(0, 0)
+  bar:SetValue(0)
+  bar:SetScript("OnValueChanged", function(self, value)
+    if self.updating then return end
+    onScroll(math.floor(value + 0.5))
+  end)
+  bar:EnableMouseWheel(true)
+  bar:SetScript("OnMouseWheel", function(_, delta) onWheel(delta) end)
+  function bar:Update(offset, maxOffset)
+    maxOffset = math.max(0, maxOffset)
+    self.updating = true
+    self:SetMinMaxValues(0, maxOffset)
+    self:SetValue(offset)
+    self.updating = false
+    self:SetShown(maxOffset > 0)
+  end
+  return bar
+end
+
 function ns.CreateSearchWindow(spec)
   local win = { results = {}, offset = 0, query = "", lines = {}, detailOffset = 0 }
   local f -- built on first Open
@@ -80,6 +114,7 @@ function ns.CreateSearchWindow(spec)
         row:Hide()
       end
     end
+    f.detailBar:Update(win.detailOffset, #win.lines - DETAIL_ROWS)
   end
 
   local function Select(r, keepScroll)
@@ -115,6 +150,7 @@ function ns.CreateSearchWindow(spec)
       end
       b:UpdateHighlight()
     end
+    f.listBar:Update(win.offset, #win.results - VISIBLE)
     local n = #win.results
     if win.query == "" then
       f.count:SetText("Type part of " .. (spec.noun == "item" and "an item's" or "a mob's") .. " name.")
@@ -193,20 +229,26 @@ function ns.CreateSearchWindow(spec)
       end
     end)
 
+    local function ScrollListTo(offset)
+      win.offset = math.min(math.max(0, #win.results - VISIBLE), math.max(0, offset))
+      RenderList()
+    end
+    local function WheelList(delta) ScrollListTo(win.offset - delta * 3) end
+
     local list = CreateFrame("Frame", nil, f)
     list:SetPoint("TOPLEFT", 16, -62)
-    list:SetSize(232, VISIBLE * 21)
+    list:SetSize(218, VISIBLE * 21)
     list:EnableMouseWheel(true)
-    list:SetScript("OnMouseWheel", function(_, delta)
-      local maxOffset = math.max(0, #win.results - VISIBLE)
-      win.offset = math.min(maxOffset, math.max(0, win.offset - delta * 3))
-      RenderList()
-    end)
+    list:SetScript("OnMouseWheel", function(_, delta) WheelList(delta) end)
+
+    f.listBar = CreateScrollBar(f, ScrollListTo, WheelList)
+    f.listBar:SetPoint("TOPLEFT", list, "TOPRIGHT", 3, 0)
+    f.listBar:SetPoint("BOTTOMLEFT", list, "BOTTOMRIGHT", 3, 0)
 
     f.buttons = {}
     for i = 1, VISIBLE do
       local b = CreateFrame("Button", nil, list)
-      b:SetSize(232, 20)
+      b:SetSize(218, 20)
       b:SetPoint("TOPLEFT", 0, -(i - 1) * 21)
       b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
       b.sel = b:CreateTexture(nil, "BACKGROUND")
@@ -226,16 +268,19 @@ function ns.CreateSearchWindow(spec)
       f.buttons[i] = b
     end
 
-    local d = CreateFrame("Frame", nil, f)
-    d:SetPoint("TOPLEFT", list, "TOPRIGHT", 16, 26)
-    d:SetPoint("BOTTOMRIGHT", -18, 34)
-    d:EnableMouseWheel(true)
-    d:SetScript("OnMouseWheel", function(_, delta)
-      local maxOffset = math.max(0, #win.lines - DETAIL_ROWS)
-      win.detailOffset = math.min(maxOffset, math.max(0, win.detailOffset - delta * 3))
+    local function ScrollDetailTo(offset)
+      win.detailOffset = math.min(math.max(0, #win.lines - DETAIL_ROWS), math.max(0, offset))
       RenderDetail()
-    end)
+    end
+    local function WheelDetail(delta) ScrollDetailTo(win.detailOffset - delta * 3) end
+
+    local d = CreateFrame("Frame", nil, f)
+    d:SetPoint("TOPLEFT", list, "TOPRIGHT", 30, 26)
+    d:SetPoint("BOTTOMRIGHT", -32, 34)
+    d:EnableMouseWheel(true)
+    d:SetScript("OnMouseWheel", function(_, delta) WheelDetail(delta) end)
     f.detail = d
+    f.detailBar = CreateScrollBar(f, ScrollDetailTo, WheelDetail)
     d.name = d:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     d.name:SetPoint("TOPLEFT")
     d.name:SetPoint("RIGHT")
@@ -277,6 +322,9 @@ function ns.CreateSearchWindow(spec)
       row:Hide()
       d.rows[i] = row
     end
+    -- Detail scrollbar runs beside the rows, from the first row to the bottom.
+    f.detailBar:SetPoint("TOPLEFT", d.rows[1], "TOPRIGHT", 6, 0)
+    f.detailBar:SetPoint("BOTTOMLEFT", d, "BOTTOMRIGHT", 6, 0)
   end
 
   function win:IsShown() return f ~= nil and f:IsShown() end

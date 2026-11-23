@@ -55,6 +55,7 @@ function CreateFrame(_, name)
     if was and rawget(self, "OnHide") then self.OnHide(self) end -- like the real client
   end
   f.IsShown = function(self) return self.shown end
+  f.SetShown = function(self, v) if v then self:Show() else self:Hide() end end
   f.left, f.top = 300, 700
   f.GetLeft = function(self) return self.left end
   f.GetTop = function(self) return self.top end
@@ -590,6 +591,29 @@ check("search box: releasing Shift collapses them again", not shownKinds().grey)
 sbw.box.OnKeyDown(sbw.box, "A")
 check("search box: other keys don't expand", not shownKinds().grey)
 check("Shift override is cleared afterwards", ns.shiftOverride == nil)
+sbw:Hide()
+
+-- scrollbars on the result list and the details
+ns.ShowSearch("wolf")
+local many = ns.SearchMobs("wolf")
+check("list scrollbar shows when results overflow", #many > 18 and sbw.listBar.shown, #many)
+local to = math.min(5, #many - 18)
+sbw.listBar.OnValueChanged(sbw.listBar, to) -- drag it
+check("dragging the list scrollbar scrolls the list", sbw.buttons[1].result and sbw.buttons[1].result.id == many[to + 1].id,
+  #many .. " results, offset " .. to)
+sbw.listBar.OnValueChanged(sbw.listBar, 999)
+check("list can't scroll past the end", sbw.buttons[18].result and sbw.buttons[18].result.id == many[#many].id)
+ns.ShowSearch("kobold vermin")
+check("no list scrollbar when everything fits", not sbw.listBar.shown)
+shift = true
+ns.ShowSearch("azuregos", 6109)
+check("detail scrollbar shows for long details (Azuregos, Shift)", sbw.detailBar.shown)
+local third = sbw.detail.rows[3].data
+sbw.detailBar.OnValueChanged(sbw.detailBar, 2)
+check("dragging the detail scrollbar scrolls the details", sbw.detail.rows[1].data == third and third ~= nil)
+shift = false
+ns.ShowSearch("kobold vermin", 6)
+check("no detail scrollbar when everything fits", not sbw.detailBar.shown)
 sbw:Hide()
 
 -- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
