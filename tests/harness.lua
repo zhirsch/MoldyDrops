@@ -92,6 +92,8 @@ function GetLootSlotInfo(slot) return nil, loot[slot].name, 1, nil, loot[slot].q
 function IsFishingLoot() return false end
 local shift = false
 function IsShiftKeyDown() return shift end
+local ctrl = false
+function IsControlKeyDown() return ctrl end
 function GetBuildInfo() return "1.60.1", "1", "Nov 1 2026", 16001 end
 function GetAddOnMetadata() return "0.1.0" end
 
@@ -420,6 +422,36 @@ local scraps = ns.SearchItems("ruined leather scraps")
 local fromSkin = 0
 for _, m in ipairs(ns.MobsDropping(scraps[1] and scraps[1].id or -1)) do if m.gather == 1 then fromSkin = fromSkin + 1 end end
 check("rsearch: many mobs skinnable for Ruined Leather Scraps", fromSkin > 50, fromSkin)
+
+-- container contents in rsearch: Murloc Coastrunner (126) drops Small Barnacled Clam (5523, 33.1%)
+ns.BuildDropIndex()
+local function viaClam(itemID)
+  for _, m in ipairs(ns.MobsDropping(itemID)) do if m.id == 126 and m.via == 5523 then return m end end
+end
+local meat = viaClam(5503)
+check("rsearch: Clam Meat via clam", meat and near(meat.pct, 33.1), meat and meat.pct)
+local pearl = viaClam(5498)
+check("rsearch: pearl chance = clam chance x pearl chance", pearl and near(pearl.pct, 33.1 * 0.05), pearl and pearl.pct)
+local pearls = ns.SearchItems("small lustrous pearl")
+check("rsearch finds container-only items", pearls[1] and pearls[1].id == 5498 and pearls[1].mobCount > 1, pearls[1] and pearls[1].mobCount)
+
+-- Ctrl+click jumps; a plain click doesn't
+ns.ShowItemSearch("small lustrous pearl", 5498)
+local row
+for _, f in ipairs(frames) do if f.data ~= nil and rawget(f, "OnClick") and type(f.data) == "table" and f.data.id then row = f break end end
+local jumped
+local realShowSearch = ns.ShowSearch
+ns.ShowSearch = function(name, id) jumped = id end
+if row then
+  ctrl = false; row.OnClick(row)
+  check("plain click on a mob row doesn't jump", jumped == nil)
+  ctrl = true; row.OnClick(row)
+  check("Ctrl+click on a mob row jumps to /drops search for it", jumped == row.data.id, jumped)
+  ctrl = false
+else
+  check("found an item-window mob row to click", false)
+end
+ns.ShowSearch = realShowSearch
 
 -- the windows build and fill without errors (stub frames)
 local function ok(name, fn)

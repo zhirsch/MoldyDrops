@@ -82,19 +82,18 @@ local window = ns.CreateSearchWindow({
     else
       GameTooltip:SetHyperlink("item:" .. itemID)
       if kind == "content" then
-        GameTooltip:AddLine("Chance per container opened, from 1.12 data.", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine("Chance per container opened, from 1.12 data. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
       elseif kind == "gather" then
-        GameTooltip:AddLine("Chance per corpse gathered. Click to see every mob that gives it.", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine("Chance per corpse gathered. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
       elseif kind == "pick" then
-        GameTooltip:AddLine("Chance per mob pick pocketed. Click to see every mob that gives it.", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine("Chance per mob pick pocketed. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
       else
-        GameTooltip:AddLine("Click to see every mob that drops it.", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine("Ctrl+click to see every mob that drops it.", 0.6, 0.6, 0.6)
       end
     end
   end,
   onRowClick = function(line)
     local itemID = line[1]
-    if line[3] == "content" then return end
     if itemID ~= ns.GREY then
       local name = ns.ItemInfo(itemID)
       ns.ShowItemSearch(name, itemID)

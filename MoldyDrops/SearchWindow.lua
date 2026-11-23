@@ -9,7 +9,8 @@ local _, ns = ...
 --   search(query)        -> list of results, each with a unique .id
 --   listText(r)          -> left text, right text for a result's list entry
 --   detail(r)            -> header { name, sub, source }, lines { { left, right, data }, ... }
---   onRowEnter(row, data), onRowClick(data)   optional, for detail lines
+--   onRowEnter(row, data)  optional, fills GameTooltip for a detail line
+--   onRowClick(data)       optional, called on Ctrl+click of a detail line
 --   noun                 "mob" or "item", for the status text
 
 local VISIBLE = 18        -- list entries shown
@@ -219,8 +220,9 @@ function ns.CreateSearchWindow(spec)
         end
       end)
       row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+      -- Ctrl+click jumps to the other search (item -> rsearch, mob -> search).
       row:SetScript("OnClick", function(self)
-        if spec.onRowClick and self.data ~= nil then spec.onRowClick(self.data) end
+        if spec.onRowClick and self.data ~= nil and IsControlKeyDown() then spec.onRowClick(self.data) end
       end)
       row:Hide()
       d.rows[i] = row
