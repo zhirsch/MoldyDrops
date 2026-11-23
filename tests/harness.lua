@@ -12,6 +12,10 @@ local now = 1000
 function GetTime() return now end
 function time() return 1795400000 end
 date = os.date
+-- Functions WoW's Lua doesn't have, so the tests fail if the addon uses them.
+math.randomseed = nil
+io = nil
+loadstring = nil
 function print(s) log("[print] " .. tostring(s)) end
 function strsplit(sep, s)
   local t = {}

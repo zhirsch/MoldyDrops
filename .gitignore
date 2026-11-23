@@ -3,3 +3,5 @@ tests/index.html
 # database dumps used by tools/Build-BaseData.ps1
 *.sql
 *.sql.gz
+# local Claude Code config
+.claude/

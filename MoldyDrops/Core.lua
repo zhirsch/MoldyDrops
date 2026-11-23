@@ -36,7 +36,7 @@ local function InitDB()
   db.items = db.items or {}
   db.mobs = db.mobs or {}
   if not db.clientId then
-    math.randomseed(math.floor((GetTime() * 1000) % 2147483647) + (time and time() or 0))
+    -- No math.randomseed: WoW removes it and seeds math.random itself.
     db.clientId = NewClientId()
   end
   ns.db = db
