@@ -6,6 +6,7 @@ local function log(s) out[#out + 1] = tostring(s) end
 local function check(name, cond, extra)
   if cond then log("PASS " .. name) else fails = fails + 1; log("FAIL " .. name .. (extra and (" :: " .. tostring(extra)) or "")) end
 end
+local function near(a, b) return math.abs(a - b) < 0.01 end
 
 -- ---------- WoW API stubs ----------
 local now = 1000
@@ -171,7 +172,28 @@ check("item name stored", MoldyDropsDB.items[755] and MoldyDropsDB.items[755][1]
 
 check("grey corpses counted", own and own[-1] == 2, own and own[-1])
 
-local function near(a, b) return math.abs(a - b) < 0.01 end
+-- gathering
+local sk = MoldyDropsDB.ownGather[6]
+check("skinning recorded separately", sk and sk.kind == 1 and sk[0] == 1 and sk[2318] == 1)
+local gk, grows, gnote = ns.Tooltip.Gather(113) -- Stonetusk Boar, bundled skinning data
+check("bundled skinning data", gk == 1 and grows[1] and near(grows[1][2], 60.7) and gnote == "1.12 estimate",
+  tostring(gk) .. " " .. tostring(gnote))
+check("skinning item name", ns.ItemInfo(grows[1][1]) == "Ruined Leather Scraps", ns.ItemInfo(grows[1][1]))
+-- herbalism on a new mob, while grouped (gathering is personal, so it still counts)
+grouped = true
+local gH = guid(274400, 1)
+now = now + 10
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "x", 2366)
+Loot({ { guid = gH, item = 88888, name = "Skybloom", q = 1 } })
+Loot({ { guid = gH, item = 88888 } }) -- reopening doesn't count twice
+grouped = false
+now = now + 10
+gk, grows, gnote = ns.Tooltip.Gather(274400)
+check("herbalism recorded", gk == 2 and grows[1][1] == 88888 and grows[1][2] == 100 and gnote == "you, only 1 corpse",
+  tostring(gk) .. " " .. tostring(gnote))
+check("no gathering for a humanoid", ns.Tooltip.Gather(38) == nil) -- Defias Thug
+
+
 
 -- small own sample -> base estimate, greys folded
 local rows, greys, note = ns.Tooltip.Choose(6)
@@ -231,7 +253,10 @@ check("search case-insensitive", foundThug)
 res = ns.SearchMobs("coldr")
 check("search finds Forever mob from recordings", res[1] and res[1].id == 274300, res[1] and res[1].name)
 check("search empty query", #ns.SearchMobs("   ") == 0)
-check("search special chars are literal", #ns.SearchMobs("%") == 0 and #ns.SearchMobs("(") == 0)
+check("search special chars are literal", #ns.SearchMobs("%") == 0 and (function()
+  for _, r in ipairs(ns.SearchMobs("(")) do if not r.name:find("(", 1, true) then return false end end
+  return true
+end)())
 
 -- base64 round trips (vs JS btoa)
 for len = 0, 12 do
@@ -252,13 +277,15 @@ check("export prefix", str:sub(1, 5) == "!MD1!")
 check("export header", text:match("^MD1 U " .. MoldyDropsDB.clientId .. " 1795400000 0.1.0 16001\n") ~= nil)
 check("export N line with grey count", text:find("\nN 6 3 159:1 755:2 G:2\n", 1, true) ~= nil)
 check("export M line", text:find("\nM 274300 Coldrasp", 1, true) ~= nil)
+check("export S lines", text:find("\nS 6 1 1 2318:1\n", 1, true) ~= nil and text:find("\nS 274400 2 1 88888:1\n", 1, true) ~= nil)
+check("export gathered item names", text:find("\nI 88888 1 Skybloom", 1, true) ~= nil)
 check("export I line", text:find("\nI 755 0 Melted Candle", 1, true) ~= nil)
 check("export mob count", n == 2, n)
 local ok, err = ns.Codec.ParseSnapshot(str)
 check("upload string rejected by import", ok == nil and err:find("upload string") ~= nil, err)
 
 -- snapshot import
-local snapText = "MD1 S 1795400000 7\nN 6 120 755:36 159:8 4536:15 G:40\nN 30 50 1476:25 5465:10\nN 274300 30 99999:9\nI 99999 3 Skyborne Trinket\nM 274300 Coldrasp\nM 274301 Gale Wisp\nZ future record\n"
+local snapText = "MD1 S 1795400000 7\nN 6 120 755:36 159:8 4536:15 G:40\nN 30 50 1476:25 5465:10\nN 274300 30 99999:9\nI 99999 3 Skyborne Trinket\nM 274300 Coldrasp\nM 274301 Gale Wisp\nS 113 1 25 2318:20 783:5\nS 5 9 10 1:1\nZ future record\n"
 local snap = "!MD1!" .. js.global:btoa(snapText)
 local comm, items, count, mobs = ns.Codec.ParseSnapshot("  " .. snap .. "\n")
 check("snapshot parsed", comm and count == 3 and comm.contributors == 7, items)
@@ -302,6 +329,22 @@ check("rsearch Forever item's mob", mobs[1] and mobs[1].id == 274300 and mobs[1]
 check("rsearch empty query", #ns.SearchItems("  ") == 0)
 local base = ns.MobsDropping(5465) -- Small Spider Leg, base data only
 check("rsearch base-only item", base[1] ~= nil and base[1].note:find("1.12 estimate", 1, true) ~= nil, base[1] and base[1].note)
+
+-- gathering in snapshots and rsearch
+check("snapshot S parsed, bad kind ignored", MoldyDropsDB.community.gather[113] and MoldyDropsDB.community.gather[113].kind == 1
+  and MoldyDropsDB.community.gather[113][0] == 25 and MoldyDropsDB.community.gather[5] == nil)
+gk, grows, gnote = ns.Tooltip.Gather(113)
+check("community skinning preferred at 20+ corpses", gk == 1 and gnote == "community, 25 corpses" and grows[1][1] == 2318 and grows[1][2] == 80,
+  tostring(gnote))
+local leather = ns.MobsDropping(2318)
+local boar
+for _, m in ipairs(leather) do if m.id == 113 and m.gather == 1 then boar = m end end
+check("rsearch lists skinnable mobs with their profession", boar and boar.pct == 80, boar and boar.pct)
+ns.BuildDropIndex()
+local scraps = ns.SearchItems("ruined leather scraps")
+local fromSkin = 0
+for _, m in ipairs(ns.MobsDropping(scraps[1] and scraps[1].id or -1)) do if m.gather == 1 then fromSkin = fromSkin + 1 end end
+check("rsearch: many mobs skinnable for Ruined Leather Scraps", fromSkin > 50, fromSkin)
 
 -- the windows build and fill without errors (stub frames)
 local function ok(name, fn)

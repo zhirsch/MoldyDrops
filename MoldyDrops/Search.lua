@@ -52,16 +52,27 @@ local window = ns.CreateSearchWindow({
       sub = (level ~= "" and ("Level " .. level .. "  ·  ") or "") .. "NPC " .. r.id,
     }
     local expand = IsShiftKeyDown()
-    local lines, source, expandable = ns.Tooltip.Lines(r.id, ns.WINDOW_N, expand)
-    if not lines or #lines == 0 then
-      header.source = "No drop data for this mob yet."
-      return header, {}
-    end
-    header.source = "Source: " .. source .. ((expandable and not expand) and "  ·  hold Shift for more" or "")
     local out = {}
-    for i, line in ipairs(lines) do
-      local left, right = ns.Tooltip.LineText(line, expand)
-      out[i] = { left, right, line }
+    local lines, source, expandable = ns.Tooltip.Lines(r.id, ns.WINDOW_N, expand)
+    if lines and #lines > 0 then
+      header.source = "Source: " .. source .. ((expandable and not expand) and "  ·  hold Shift for more" or "")
+      for _, line in ipairs(lines) do
+        local left, right = ns.Tooltip.LineText(line, expand)
+        out[#out + 1] = { left, right, line }
+      end
+    else
+      header.source = "No drop data for this mob yet."
+    end
+
+    -- Gathering section, under its own heading.
+    local kind, rows, note = ns.Tooltip.Gather(r.id)
+    if kind and #rows > 0 then
+      out[#out + 1] = { " ", nil, nil }
+      out[#out + 1] = { "|cffffd100" .. (ns.GATHER_NAMES[kind] or "Gathering") .. "|r  |cff999999" .. note .. "|r", nil, nil }
+      for i = 1, math.min(ns.WINDOW_N, #rows) do
+        local name, quality = ns.ItemInfo(rows[i][1])
+        out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r", ns.FormatPct(rows[i][2]), { rows[i][1], rows[i][2], "gather" } }
+      end
     end
     return header, out
   end,
@@ -74,6 +85,8 @@ local window = ns.CreateSearchWindow({
       GameTooltip:SetHyperlink("item:" .. itemID)
       if kind == "content" then
         GameTooltip:AddLine("Chance per container opened, from 1.12 data.", 0.6, 0.6, 0.6)
+      elseif kind == "gather" then
+        GameTooltip:AddLine("Chance per corpse gathered. Click to see every mob that gives it.", 0.6, 0.6, 0.6)
       else
         GameTooltip:AddLine("Click to see every mob that drops it.", 0.6, 0.6, 0.6)
       end

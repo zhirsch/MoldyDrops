@@ -33,6 +33,9 @@ ns.QualityHex, ns.FormatPct = QualityHex, FormatPct
 
 local MAX_GREY_LINES = 8
 
+-- "1 kill", "20 kills"
+local function Count(n, word) return n .. " " .. word .. (n == 1 and "" or "s") end
+
 local function ByRate(a, b) return a[2] > b[2] or (a[2] == b[2] and a[1] < b[1]) end
 
 -- From an observed entry, returns rows { itemID, percent } with all grey
@@ -86,14 +89,51 @@ function Tooltip.Choose(npcID)
 
   if obs and obs[0] >= ns.MIN_SAMPLE then
     local rows, greys = ObservedRows(obs)
-    return rows, greys, ("%s, %d kills"):format(obsLabel, obs[0])
+    return rows, greys, ("%s, %s"):format(obsLabel, Count(obs[0], "kill"))
   elseif base then
     local note = "1.12 estimate"
-    if obs then note = note .. (" (%s: %d kills)"):format(obsLabel, obs[0]) end
+    if obs then note = note .. (" (%s: %s)"):format(obsLabel, Count(obs[0], "kill")) end
     return Pairs(base), Pairs(ns.baseGrey and ns.baseGrey[npcID]), note
   elseif obs then
     local rows, greys = ObservedRows(obs)
-    return rows, greys, ("%s, only %d kills"):format(obsLabel, obs[0])
+    return rows, greys, ("%s, only %s"):format(obsLabel, Count(obs[0], "kill"))
+  end
+end
+
+-- What gathering the corpse yields (skinning, herbalism, mining, engineering).
+-- Returns kind (1-4), rows { { itemID, percent per corpse gathered }, ... }
+-- and a note; nil if nothing is known. Same source rules as Choose.
+function Tooltip.Gather(npcID)
+  local db = ns.db
+  local own = db.ownGather[npcID]
+  local comm = db.community.gather and db.community.gather[npcID]
+  local base = ns.gather and ns.gather[npcID]
+
+  local obs, obsLabel
+  if comm and (not own or comm[0] >= own[0]) then
+    obs, obsLabel = comm, "community"
+  elseif own and own[0] > 0 then
+    obs, obsLabel = own, "you"
+  end
+  local function observed()
+    local rows = {}
+    for itemID, c in pairs(obs) do
+      if type(itemID) == "number" and itemID > 0 then rows[#rows + 1] = { itemID, 100 * c / obs[0] } end
+    end
+    table.sort(rows, ByRate)
+    return rows
+  end
+
+  if obs and obs[0] >= ns.MIN_SAMPLE then
+    return obs.kind, observed(), ("%s, %s"):format(obsLabel, Count(obs[0], "corpse"))
+  elseif base then
+    local rows = {}
+    for i = 2, #base - 1, 2 do rows[#rows + 1] = { base[i], base[i + 1] } end
+    local note = "1.12 estimate"
+    if obs then note = note .. (" (%s: %s)"):format(obsLabel, Count(obs[0], "corpse")) end
+    return base[1], rows, note
+  elseif obs then
+    return obs.kind, observed(), ("%s, only %s"):format(obsLabel, Count(obs[0], "corpse"))
   end
 end
 
@@ -171,16 +211,30 @@ local function AddLoot(tooltip, unit)
   local npcID = ns.NpcIDFromGUID(UnitGUID(unit))
   if not npcID then return end
   local expand = IsShiftKeyDown()
+  local added = false
   local lines, source = Tooltip.Lines(npcID, ns.TOP_N, expand)
-  if not lines or #lines == 0 then return end
-
-  tooltip:AddLine(" ")
-  tooltip:AddDoubleLine("Drops", source, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
-  for _, line in ipairs(lines) do
-    local left, right = Tooltip.LineText(line, expand)
-    tooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
+  if lines and #lines > 0 then
+    tooltip:AddLine(" ")
+    tooltip:AddDoubleLine("Drops", source, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
+    for _, line in ipairs(lines) do
+      local left, right = Tooltip.LineText(line, expand)
+      tooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
+    end
+    added = true
   end
-  tooltip:Show()
+
+  -- Separate section for skinning / herbalism / mining / engineering the corpse.
+  local kind, rows, note = Tooltip.Gather(npcID)
+  if kind and #rows > 0 then
+    tooltip:AddLine(" ")
+    tooltip:AddDoubleLine(ns.GATHER_NAMES[kind] or "Gathering", note, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
+    for i = 1, math.min(ns.TOP_N, #rows) do
+      local name, quality = ns.ItemInfo(rows[i][1])
+      tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r", FormatPct(rows[i][2]), 1, 1, 1, 1, 1, 1)
+    end
+    added = true
+  end
+  if added then tooltip:Show() end
 end
 
 local function OnTooltipSetUnit(tooltip)

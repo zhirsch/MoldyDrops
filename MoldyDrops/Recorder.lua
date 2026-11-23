@@ -16,8 +16,10 @@ local _, ns = ...
 --     addons read the combat log. Where the combat log is readable, its
 --     PARTY_KILL events are used as well. Turn on enemy nameplates so mobs you
 --     aren't targeting are seen too.
---   * Each corpse is recorded once (re-opening the loot window, skinning
---     and the like are ignored). Pick pocketing and gathering are ignored.
+--   * Each corpse is recorded once (re-opening the loot window is ignored).
+--     Pick pocketing is ignored.
+--   * Skinning, herbalism and mining a corpse are recorded separately
+--     (ns.db.ownGather), once per corpse, solo or not.
 local Recorder = {}
 ns.Recorder = Recorder
 
@@ -27,8 +29,12 @@ local tapDenied = {}  -- [guid] = true if we saw it tagged by someone else
 local names = {}      -- [guid] = unit name, from the combat log or a unit token
 local engaged = {}    -- [guid] = true if you or your pet were on its threat table
 local died = {}       -- [guid] = true once its death has been handled
+local gathered = {}   -- [guid] = true once its gathering loot has been recorded
 local lastGatherAt = 0
-local gatherSpells = {}
+local lastGatherKind
+-- spell name -> gathering kind (1 skinning, 2 herbalism, 3 mining, 4 engineering;
+-- 0 = pick pocketing, which is ignored)
+local gatherSpells = { Skinning = 1, ["Herb Gathering"] = 2, Herbalism = 2, Mining = 3 }
 
 local LOOT_SLOT_ITEM = (Enum and Enum.LootSlotType and Enum.LootSlotType.Item) or LOOT_SLOT_ITEM or 1
 
@@ -141,20 +147,16 @@ local function OnCombatLog()
   OnDeath(destGUID)
 end
 
-local function OnLootOpened()
-  if not IsSolo() then return end
-  if GetTime() - lastGatherAt < 3 then return end
-  if IsFishingLoot and IsFishingLoot() then return end
-  if ns.db.settings.openWorldOnly and IsInInstance() then return end
-
-  -- corpse guid -> { [itemID] = true, [-1] = true if any grey item }
+-- Reads the open loot window: corpse guid -> { [itemID] = true, [-1] = true
+-- if any grey item }, skipping corpses already in `done`.
+local function ReadLoot(done)
   local byCorpse = {}
   local any = false
   for slot = 1, GetNumLootItems() do
     local sources = { GetLootSourceInfo(slot) }
     for i = 1, #sources, 2 do
       local guid = sources[i]
-      if NpcIDFromGUID(guid) and not looted[guid] then
+      if NpcIDFromGUID(guid) and not done[guid] then
         byCorpse[guid] = byCorpse[guid] or {}
         any = true
         if GetLootSlotType(slot) == LOOT_SLOT_ITEM then
@@ -172,7 +174,40 @@ local function OnLootOpened()
       end
     end
   end
-  if not any then return end
+  return any and byCorpse or nil
+end
+
+-- Skinning, herbalism, mining or engineering on a corpse. Recorded even in a
+-- group, since what you gather is yours alone.
+local function RecordGathering(kind)
+  local byCorpse = ReadLoot(gathered)
+  if not byCorpse then return end
+  for guid, items in pairs(byCorpse) do
+    gathered[guid] = true
+    local npcID = NpcIDFromGUID(guid)
+    local e = ns.db.ownGather[npcID]
+    if not e or e.kind ~= kind then
+      e = { kind = kind, [0] = 0 }
+      ns.db.ownGather[npcID] = e
+    end
+    e[0] = e[0] + 1
+    for itemID in pairs(items) do
+      if itemID > 0 then e[itemID] = (e[itemID] or 0) + 1 end
+    end
+  end
+end
+
+local function OnLootOpened()
+  if IsFishingLoot and IsFishingLoot() then return end
+  if ns.db.settings.openWorldOnly and IsInInstance() then return end
+  if GetTime() - lastGatherAt < 3 then
+    if lastGatherKind and lastGatherKind > 0 then RecordGathering(lastGatherKind) end
+    return
+  end
+  if not IsSolo() then return end
+
+  local byCorpse = ReadLoot(looted)
+  if not byCorpse then return end
 
   -- Looting a living mob means pick pocketing.
   local targetGUID = UnitGUID("target")
@@ -211,9 +246,10 @@ function Recorder:Init()
     return
   end
 
-  for _, id in ipairs({ 8613, 2575, 2366, 921 }) do -- Skinning, Mining, Herb Gathering, Pick Pocket
+  -- Localized names of the gathering spells (the English ones are built in).
+  for id, kind in pairs({ [8613] = 1, [2366] = 2, [2575] = 3, [921] = 0 }) do
     local name = ns.SpellName(id)
-    if name then gatherSpells[name] = true end
+    if name then gatherSpells[name] = kind end
   end
 
   local f = CreateFrame("Frame")
@@ -248,14 +284,16 @@ function Recorder:Init()
       local unit, _, spellID = ...
       if unit == "player" and spellID then
         local name = ns.SpellName(spellID)
-        if name and gatherSpells[name] then lastGatherAt = GetTime() end
+        if name and gatherSpells[name] then
+          lastGatherAt, lastGatherKind = GetTime(), gatherSpells[name]
+        end
       end
     elseif event == "PLAYER_REGEN_ENABLED" then
       -- Out of combat: keep the tracking tables small. Tap and engagement
       -- state is kept until then because corpses are often checked after.
       local n = 0
       for _ in pairs(looted) do n = n + 1 end
-      if n > 2000 then wipe(looted); wipe(counted); wipe(names); wipe(died) end
+      if n > 2000 then wipe(looted); wipe(counted); wipe(names); wipe(died); wipe(gathered) end
       C_Timer.After(5, function()
         if not (UnitAffectingCombat and UnitAffectingCombat("player")) then
           wipe(tapDenied); wipe(engaged)

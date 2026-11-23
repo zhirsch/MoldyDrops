@@ -15,6 +15,11 @@ function ns.Print(msg) print(ns.PREFIX .. msg) end
 --   MoldyDropsDB.community         { npcs = same shape as own, contributors, generated }
 --   MoldyDropsDB.items[itemID]     { name, quality } for items seen in loot or imported
 --   MoldyDropsDB.mobs[npcID]       { name } for mobs seen in game or imported
+--   MoldyDropsDB.ownGather[npcID]  { kind = 1 skin/2 herb/3 mine/4 engineer, [0] = corpses
+--                                    gathered, [itemID] = corpses that gave it }
+--   MoldyDropsDB.community.gather  same shape as ownGather, from the website
+
+ns.GATHER_NAMES = { "Skinning", "Herbalism", "Mining", "Engineering" }
 local function NewClientId()
   local chars = "0123456789abcdefghijklmnopqrstuvwxyz"
   local t = {}
@@ -32,7 +37,9 @@ local function InitDB()
   if db.settings.enabled == nil then db.settings.enabled = true end
   if db.settings.openWorldOnly == nil then db.settings.openWorldOnly = true end
   db.own = db.own or {}
+  db.ownGather = db.ownGather or {}
   db.community = db.community or { npcs = {} }
+  db.community.gather = db.community.gather or {}
   db.items = db.items or {}
   db.mobs = db.mobs or {}
   if not db.clientId then
@@ -99,7 +106,7 @@ local function CountNpcs(t)
     local k = e[0] or 0
     kills = kills + k
     if k >= ns.MIN_SAMPLE then solid = solid + 1 end
-    for id in pairs(e) do if id > 0 then items[id] = true end end
+    for id in pairs(e) do if type(id) == "number" and id > 0 then items[id] = true end end
   end
   local ni = 0
   for _ in pairs(items) do ni = ni + 1 end
@@ -121,6 +128,8 @@ local function PrintStats()
   local n, k, solid, items = CountNpcs(db.own)
   print(("  Your recordings: %s%d|r kills of %s%d|r mobs, %s%d|r different items; %s%d|r mobs have %d+ kills"):format(
     W, k, W, n, W, items, W, solid, ns.MIN_SAMPLE))
+  local gn, gk = CountNpcs(db.ownGather)
+  print(("    gathering: %s%d|r corpses of %s%d|r mobs (skinning, herbalism, mining)"):format(W, gk, W, gn))
   print(("    last export: %s"):format(db.lastExport and date("%Y-%m-%d %H:%M", db.lastExport) or "never"))
 
   local c = db.community

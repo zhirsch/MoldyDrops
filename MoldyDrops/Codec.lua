@@ -7,6 +7,7 @@ local _, ns = ...
 --     N <npcID> <kills> <itemID>:<count> ... [G:<corpses with any grey item>]
 --     I <itemID> <quality> <item name>
 --     M <npcID> <mob name>
+--     S <npcID> <kind 1-4> <corpses gathered> <itemID>:<count> ...   (skinning/herb/mining/engineering)
 local Codec = {}
 ns.Codec = Codec
 
@@ -55,7 +56,8 @@ end
 local function SortedKeys(t, itemsOnly)
   local keys = {}
   for k in pairs(t) do
-    if not itemsOnly or k > 0 then keys[#keys + 1] = k end
+    -- itemsOnly: just positive item IDs (skips [0] kills, [-1] grey count, .kind)
+    if type(k) == "number" and (not itemsOnly or k > 0) then keys[#keys + 1] = k end
   end
   table.sort(keys)
   return keys
@@ -81,9 +83,26 @@ function Codec.Export(db, addonVersion, build)
       mobCount = mobCount + 1
     end
   end
+  local named = {}
+  local gather = db.ownGather or {}
+  for _, npcID in ipairs(SortedKeys(gather)) do
+    local e = gather[npcID]
+    if (e[0] or 0) > 0 and e.kind then
+      local parts = { "S", npcID, e.kind, e[0] }
+      for _, itemID in ipairs(SortedKeys(e, true)) do
+        parts[#parts + 1] = itemID .. ":" .. e[itemID]
+        itemsUsed[itemID] = true
+      end
+      lines[#lines + 1] = table.concat(parts, " ")
+      named[npcID] = true
+    end
+  end
   for _, npcID in ipairs(SortedKeys(db.own)) do
+    if (db.own[npcID][0] or 0) > 0 then named[npcID] = true end
+  end
+  for _, npcID in ipairs(SortedKeys(named)) do
     local m = db.mobs[npcID]
-    if m and m[1] and (db.own[npcID][0] or 0) > 0 then
+    if m and m[1] then
       lines[#lines + 1] = ("M %d %s"):format(npcID, (m[1]:gsub("[\r\n]", " ")))
     end
   end
@@ -113,7 +132,7 @@ function Codec.ParseSnapshot(str)
     return nil, "the string is damaged or from an incompatible version"
   end
 
-  local npcs, items, mobs, count = {}, {}, {}, 0
+  local npcs, items, mobs, gather, count = {}, {}, {}, {}, 0
   for line in text:gmatch("[^\n]+") do
     local tag = line:sub(1, 2)
     if tag == "N " then
@@ -136,10 +155,22 @@ function Codec.ParseSnapshot(str)
     elseif tag == "M " then
       local npcID, name = line:match("^M (%d+) (.+)$")
       if npcID then mobs[tonumber(npcID)] = { name } end
+    elseif tag == "S " then
+      local npcID, gkind, corpses, rest = line:match("^S (%d+) (%d) (%d+)(.*)$")
+      npcID, gkind, corpses = tonumber(npcID), tonumber(gkind), tonumber(corpses)
+      if npcID and gkind and gkind >= 1 and gkind <= 4 and corpses and corpses > 0 then
+        local e = { kind = gkind, [0] = corpses }
+        for itemID, c in rest:gmatch("(%d+):(%d+)") do
+          itemID = tonumber(itemID)
+          if itemID > 0 then e[itemID] = math.min(tonumber(c), corpses) end
+        end
+        gather[npcID] = e
+      end
     end
   end
   return {
     npcs = npcs,
+    gather = gather,
     generated = date and date("%Y-%m-%d", tonumber(generated)) or generated,
     contributors = tonumber(contributors),
   }, items, count, mobs

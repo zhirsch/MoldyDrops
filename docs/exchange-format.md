@@ -31,6 +31,7 @@ The text is a list of records separated by `\n`. The first record is a header. A
 N <npcID> <kills> <itemID>:<count> <itemID>:<count> ... [G:<greyCount>]
 I <itemID> <quality> <item name to end of line>
 M <npcID> <mob name to end of line>
+S <npcID> <kind> <corpses> <itemID>:<count> <itemID>:<count> ...
 ```
 
 - `N`: `kills` is the number of corpses observed (looted, or confirmed empty). `count` is the number of those corpses that held at least one of the item. Stack size is ignored, so `count <= kills` always.
@@ -40,9 +41,15 @@ M <npcID> <mob name to end of line>
 - `I`: the item's name and quality (0 = poor … 5 = legendary) as the client saw them. This lets the website name items that are new in WoW Forever.
 - `M`: a mob's name as the client saw it. Uploads include it only for mobs the bundled 1.12 data doesn't know (new in WoW Forever). Snapshots should include every mob that isn't in the bundled data, so `/drops search` can find it.
 
+- `S`: gathering from corpses.
+  - `kind`: 1 = skinning, 2 = herbalism, 3 = mining, 4 = engineering.
+  - `corpses`: how many corpses were gathered.
+  - `count`: how many of those corpses gave at least one of the item, so `count <= corpses`.
+  - Gathering is recorded even in a group, because what you gather is yours alone.
+
 Upload counts are **cumulative totals for that install**, not the change since the last upload. The website keeps only the latest upload per `clientId`, so uploading twice never double-counts.
 
-Snapshots use the same `N`, `I` and `M` records, with counts (including `G`) summed over all accepted contributors.
+Snapshots use the same `N`, `S`, `I` and `M` records, with counts (including `G`) summed over all accepted contributors. For `S`, sum per mob and kind.
 
 ## Example
 

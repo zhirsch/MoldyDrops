@@ -14,25 +14,34 @@ local index -- [itemID] = { { npcID, percent, note }, ... }
 -- Builds the item -> mobs index from everything the tooltip can show.
 function ns.BuildDropIndex()
   index = {}
-  local seen = {}
+  local function put(itemID, npcID, pct, note, gatherKind)
+    if itemID == ns.GREY then return end
+    index[itemID] = index[itemID] or {}
+    table.insert(index[itemID], { npcID, pct, note, gatherKind })
+  end
+  local seen, seenGather = {}, {}
   local function add(npcID)
     if seen[npcID] then return end
     seen[npcID] = true
     local rows, greys, note = ns.Tooltip.Choose(npcID)
     if not rows then return end
     for _, list in ipairs({ rows, greys }) do
-      for _, r in ipairs(list) do
-        local itemID = r[1]
-        if itemID ~= ns.GREY then
-          index[itemID] = index[itemID] or {}
-          table.insert(index[itemID], { npcID, r[2], note })
-        end
-      end
+      for _, r in ipairs(list) do put(r[1], npcID, r[2], note) end
     end
+  end
+  local function addGather(npcID)
+    if seenGather[npcID] then return end
+    seenGather[npcID] = true
+    local kind, rows, note = ns.Tooltip.Gather(npcID)
+    if not kind then return end
+    for _, r in ipairs(rows) do put(r[1], npcID, r[2], note, kind) end
   end
   for id in pairs(ns.base or {}) do add(id) end
   for id in pairs(ns.db.own) do add(id) end
   for id in pairs(ns.db.community.npcs or {}) do add(id) end
+  for id in pairs(ns.gather or {}) do addGather(id) end
+  for id in pairs(ns.db.ownGather) do addGather(id) end
+  for id in pairs(ns.db.community.gather or {}) do addGather(id) end
   return index
 end
 
@@ -62,14 +71,15 @@ function ns.SearchItems(query)
   return results
 end
 
--- Mobs that drop an item: { { id, name, minL, maxL, pct, note }, ... },
--- highest chance first.
+-- Mobs that give an item: { { id, name, minL, maxL, pct, note, gather }, ... },
+-- highest chance first. gather is the gathering kind (1-4) when the item
+-- comes from skinning/herbalism/mining/engineering the corpse, else nil.
 function ns.MobsDropping(itemID)
   if not index then ns.BuildDropIndex() end
   local out = {}
   for _, e in ipairs(index[itemID] or {}) do
     local name, minL, maxL = ns.MobInfo(e[1])
-    out[#out + 1] = { id = e[1], name = name or ("NPC " .. e[1]), minL = minL, maxL = maxL, pct = e[2], note = e[3] }
+    out[#out + 1] = { id = e[1], name = name or ("NPC " .. e[1]), minL = minL, maxL = maxL, pct = e[2], note = e[3], gather = e[4] }
   end
   table.sort(out, function(a, b)
     if a.pct ~= b.pct then return a.pct > b.pct end
@@ -93,13 +103,14 @@ local window = ns.CreateSearchWindow({
     local header = {
       name = ns.QualityHex(r.quality or 1) .. r.name .. "|r",
       sub = "Item " .. r.id,
-      source = (#mobs == 1 and "1 mob drops it" or (#mobs .. " mobs drop it")) .. "; chance per kill.",
+      source = (#mobs == 1 and "1 mob" or (#mobs .. " mobs")) .. "; chance per kill, or per corpse gathered.",
     }
     local lines = {}
     for i, m in ipairs(mobs) do
       local level = ns.LevelRange(m.minL, m.maxL)
+      local how = m.gather and ("  |cffffd100" .. (ns.GATHER_NAMES[m.gather] or "Gathering") .. "|r") or ""
       lines[i] = {
-        m.name .. (level ~= "" and ("  |cff808080" .. level .. "|r") or ""),
+        m.name .. (level ~= "" and ("  |cff808080" .. level .. "|r") or "") .. how,
         ns.FormatPct(m.pct),
         m,
       }
@@ -108,6 +119,9 @@ local window = ns.CreateSearchWindow({
   end,
   onRowEnter = function(_, m)
     GameTooltip:SetText(m.name)
+    if m.gather then
+      GameTooltip:AddLine((ns.GATHER_NAMES[m.gather] or "Gathering") .. " the corpse: chance per corpse gathered.", 1, 1, 1, true)
+    end
     GameTooltip:AddLine("Source: " .. (m.note or "?"), 0.6, 0.6, 0.6)
     GameTooltip:AddLine("Click to see all its drops.", 0.6, 0.6, 0.6)
   end,

@@ -19,6 +19,8 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
 | `/drops reset` | Deletes the loot you've recorded |
 
+Mobs you can skin, herb, mine or salvage with engineering get a second section in the tooltip and search window, with the chance of each item per corpse gathered. The 1.12 data only covers skinning, since herb, mining and engineering mobs came later; the addon records what you skin, herb and mine, so those fill in from your recordings and the community data.
+
 In either search window, click a drop to see every mob that drops it, or click a mob to see its drops. `rsearch` only knows each mob's top 10 drops from the bundled 1.12 data (plus everything recorded or imported), so very rare world drops may be missing.
 
 All grey (poor quality) items share one "Grey items" row. Hold **Shift** to list them individually, in the tooltip or the search window. Shift also lists what's inside containers such as clams, with the chance of each item per container opened. Container contents come from the 1.12 data, so containers that are new in WoW Forever don't show contents.

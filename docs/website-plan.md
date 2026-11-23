@@ -42,6 +42,14 @@ observation_grey (                 -- corpses with at least one grey item (the G
   client_hash TEXT, npc_id INTEGER, count INTEGER,
   PRIMARY KEY (client_hash, npc_id)
 )
+gathering (                        -- S records: skinning/herbalism/mining/engineering
+  client_hash TEXT, npc_id INTEGER, kind INTEGER, corpses INTEGER,
+  PRIMARY KEY (client_hash, npc_id, kind)
+)
+gathering_items (
+  client_hash TEXT, npc_id INTEGER, kind INTEGER, item_id INTEGER, count INTEGER,
+  PRIMARY KEY (client_hash, npc_id, kind, item_id)
+)
 mobs (npc_id INTEGER PRIMARY KEY, name TEXT, reports INTEGER)
 observation_items (
   client_hash TEXT, npc_id INTEGER, item_id INTEGER, count INTEGER,

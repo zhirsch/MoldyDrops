@@ -72,6 +72,17 @@ public static class LootBuilder
     static Dictionary<int, List<LootRow>> creatureLoot = new Dictionary<int, List<LootRow>>();
     static Dictionary<int, List<LootRow>> refLoot = new Dictionary<int, List<LootRow>>();
     static Dictionary<int, List<LootRow>> itemLoot = new Dictionary<int, List<LootRow>>(); // containers
+    static Dictionary<int, List<LootRow>> skinLoot = new Dictionary<int, List<LootRow>>(); // skinning, herbs, mining, engineering
+
+    // Which profession gathers from a corpse, from creature_template.CreatureTypeFlags:
+    // 1 = skinning (default), 2 = herbalism (0x100), 3 = mining (0x200), 4 = engineering (0x8000).
+    static int GatherKind(int typeFlags)
+    {
+        if ((typeFlags & 0x100) != 0) return 2;
+        if ((typeFlags & 0x200) != 0) return 3;
+        if ((typeFlags & 0x8000) != 0) return 4;
+        return 1;
+    }
     static Dictionary<int, Dictionary<int, double>> refCache = new Dictionary<int, Dictionary<int, double>>();
 
     // P(at least one) when combining independent sources.
@@ -140,6 +151,7 @@ public static class LootBuilder
         var openWorld = new HashSet<int>();
         var itemInfo = new Dictionary<int, Tuple<string, int>>();
         var mobInfo = new Dictionary<int, Tuple<string, int, int>>();
+        var gatherOf = new Dictionary<int, Tuple<int, int>>(); // npc -> (skinning loot id, gather kind)
 
         Stream s = File.OpenRead(dumpPath);
         if (dumpPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)) s = new GZipStream(s, CompressionMode.Decompress);
@@ -161,6 +173,8 @@ public static class LootBuilder
                         {
                             int loot = I(f[56]);
                             if (loot > 0) lootIdOf[I(f[0])] = loot;
+                            int skin = I(f[58]);
+                            if (skin > 0) gatherOf[I(f[0])] = Tuple.Create(skin, GatherKind(I(f[20])));
                             mobInfo[I(f[0])] = Tuple.Create(f[1] ?? "", I(f[3]), I(f[4]));
                         }
                         break;
@@ -170,8 +184,10 @@ public static class LootBuilder
                     case "creature_loot_template":
                     case "reference_loot_template":
                     case "item_loot_template":
+                    case "skinning_loot_template":
                         var target = table == "creature_loot_template" ? creatureLoot
-                            : table == "item_loot_template" ? itemLoot : refLoot;
+                            : table == "item_loot_template" ? itemLoot
+                            : table == "skinning_loot_template" ? skinLoot : refLoot;
                         foreach (var f in Tuples(line))
                         {
                             var row = new LootRow { Item = I(f[1]), Chance = D(f[2]), Group = I(f[3]), MinOrRef = I(f[4]), MaxCount = I(f[5]) };
@@ -186,6 +202,7 @@ public static class LootBuilder
 
         var npcLines = new List<string>();
         var mobLines = new List<string>();
+        var namedMobs = new HashSet<int>();
         var usedItems = new SortedSet<int>();
         var lootCache = new Dictionary<int, List<KeyValuePair<int, double>>>();
         var greyCache = new Dictionary<int, List<KeyValuePair<int, double>>>();
@@ -239,7 +256,46 @@ public static class LootBuilder
             npcLines.Add(sb.ToString());
             Tuple<string, int, int> mi;
             if (mobInfo.TryGetValue(npc, out mi))
+            {
                 mobLines.Add(string.Format("[{0}]={{{1},{2},{3}}},", npc, LuaStr(mi.Item1), mi.Item2, mi.Item3));
+                namedMobs.Add(npc);
+            }
+        }
+
+        // What gathering a corpse yields: gather[npc] = { kind, itemID, percent, ... }
+        var gatherLines = new List<string>();
+        var gatherCache = new Dictionary<int, List<KeyValuePair<int, double>>>();
+        var kindCounts = new int[5];
+        foreach (var npc in openWorld.OrderBy(x => x))
+        {
+            Tuple<int, int> g;
+            if (!gatherOf.TryGetValue(npc, out g)) continue;
+            List<KeyValuePair<int, double>> items;
+            if (!gatherCache.TryGetValue(g.Item1, out items))
+            {
+                List<LootRow> rows; skinLoot.TryGetValue(g.Item1, out rows);
+                items = Expand(rows, 0).Where(kv => itemInfo.ContainsKey(kv.Key))
+                    .OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).Take(topN).ToList();
+                gatherCache[g.Item1] = items;
+            }
+            if (items.Count == 0) continue;
+            var gs = new StringBuilder();
+            gs.Append('[').Append(npc).Append("]={").Append(g.Item2);
+            foreach (var kv in items)
+            {
+                double pct = kv.Value * 100;
+                gs.Append(',').Append(kv.Key).Append(',').Append(pct.ToString(pct >= 1 ? "0.#" : "0.###", CultureInfo.InvariantCulture));
+                usedItems.Add(kv.Key);
+            }
+            gs.Append("},");
+            gatherLines.Add(gs.ToString());
+            kindCounts[g.Item2]++;
+            Tuple<string, int, int> gm;
+            if (!namedMobs.Contains(npc) && mobInfo.TryGetValue(npc, out gm))
+            {
+                mobLines.Add(string.Format("[{0}]={{{1},{2},{3}}},", npc, LuaStr(gm.Item1), gm.Item2, gm.Item3));
+                namedMobs.Add(npc);
+            }
         }
 
         // Contents of containers (clams, lockboxes, bags of loot) that mobs drop:
@@ -270,6 +326,7 @@ public static class LootBuilder
         o.AppendLine("-- These are estimates from the original game, not measured on WoW Forever.");
         o.AppendLine("-- itemID 0 in base = any grey (poor quality) item; baseGrey[npcID] lists those grey items.");
         o.AppendLine("-- contents[containerItemID] = { itemID, percent per container opened, ... }");
+        o.AppendLine("-- gather[npcID] = { kind, itemID, percent per corpse gathered, ... }; kind 1 skinning, 2 herbalism, 3 mining, 4 engineering");
         o.AppendLine("-- base[npcID] = { itemID, percent, ... }   items[itemID] = { name, quality }   mobs[npcID] = { name, minLevel, maxLevel }");
         o.AppendLine("local _, ns = ...");
         o.AppendLine("ns.items = ns.items or {}");
@@ -282,6 +339,9 @@ public static class LootBuilder
         o.AppendLine("ns.baseGrey = {");
         foreach (var l in greyLines) o.AppendLine(l);
         o.AppendLine("}");
+        o.AppendLine("ns.gather = {");
+        foreach (var l in gatherLines) o.AppendLine(l);
+        o.AppendLine("}");
         o.AppendLine("ns.contents = {");
         foreach (var l in contentLines) o.AppendLine(l);
         o.AppendLine("}");
@@ -289,7 +349,8 @@ public static class LootBuilder
         foreach (var l in mobLines) o.AppendLine(l);
         o.AppendLine("}");
         File.WriteAllText(outPath, o.ToString(), new UTF8Encoding(false));
-        return string.Format("{0} open-world NPCs with loot, {1} items, {2:N0} bytes", npcLines.Count, usedItems.Count, o.Length);
+        return string.Format("{0} open-world NPCs with loot, gathering on {3} (skin {4}, herb {5}, mine {6}, engineer {7}), {1} items, {2:N0} bytes",
+            npcLines.Count, usedItems.Count, o.Length, gatherLines.Count, kindCounts[1], kindCounts[2], kindCounts[3], kindCounts[4]);
     }
 }
 '@
