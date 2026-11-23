@@ -534,6 +534,11 @@ check("tooltip adds loot for a hostile mob", hover(6, false) > 3)
 check("tooltip adds nothing for a friendly guard (Orgrimmar Grunt)", hover(3296, true) == 0)
 check("tooltip shows enemy-faction guards (attackable)", hover(3296, false) > 0)
 
+-- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
+local sw = tostring(SRC["SearchWindow.lua"])
+check("list and detail rows don't wrap", sw:find("b.text:SetWordWrap(false)", 1, true) ~= nil
+  and sw:find("row.name:SetWordWrap(false)", 1, true) ~= nil)
+
 -- the windows build and fill without errors (stub frames)
 local function ok(name, fn)
   local success, err = pcall(fn)
