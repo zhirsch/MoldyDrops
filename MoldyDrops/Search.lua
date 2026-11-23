@@ -75,7 +75,8 @@ local window = ns.CreateSearchWindow({
       out[#out + 1] = { "|cffffd100" .. (ns.GATHER_NAMES[kind] or "Gathering") .. "|r  |cff999999" .. note .. "|r", nil, nil }
       for i = 1, math.min(ns.WINDOW_N, #rows) do
         local name, quality = ns.ItemInfo(rows[i][1])
-        out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r", ns.ColoredPct(rows[i][2], quality),
+        local qty = ns.QtyText(ns.Tooltip.Qty(kind == ns.PICKPOCKET and "pick" or "gather", r.id, rows[i][1]))
+        out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r" .. qty, ns.ColoredPct(rows[i][2], quality),
           { rows[i][1], rows[i][2], kind == ns.PICKPOCKET and "pick" or "gather" } }
       end
     end

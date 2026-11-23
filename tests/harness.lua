@@ -104,7 +104,7 @@ function UnitAffectingCombat(u) return units[u] and units[u].combat end
 function UnitIsUnit(a, b) return UnitGUID(a) ~= nil and UnitGUID(a) == UnitGUID(b) end
 local loot = {}
 function GetNumLootItems() return #loot end
-function GetLootSourceInfo(slot) return loot[slot].guid, loot[slot].copper or 1 end
+function GetLootSourceInfo(slot) return loot[slot].guid, loot[slot].copper or loot[slot].qty or 1 end
 local playerClass = "WARRIOR"
 function UnitClass() return "Class", playerClass end
 function GetLootSlotType(slot) return loot[slot].money and 2 or 1 end
@@ -686,6 +686,46 @@ ok("import window opens", function() ns.ShowImport() end)
 ok("slash commands", function()
   for _, cmd in ipairs({ "", "search vermin", "item candle", "i candle", "stats", "help" }) do SlashCmdList.MOLDYDROPS(cmd) end
 end)
+
+-- stacks: items that can come more than one at a time
+local qmin, qmax = ns.Tooltip.Qty("drop", 660, 4338) -- Mageweave Cloth from NPC 660
+check("1.12 drop count range", qmin == 1 and qmax == 2, tostring(qmin) .. "-" .. tostring(qmax))
+local function lineFor(npcID, itemID)
+  for _, l in ipairs(ns.Tooltip.Lines(npcID, 10, false) or {}) do if l[1] == itemID then return l end end
+end
+local mw = lineFor(660, 4338)
+check("drop row shows x1-2", mw and ns.Tooltip.LineText(mw, false):find("x1-2", 1, true), mw and ns.Tooltip.LineText(mw, false))
+local single = lineFor(6, 159) -- Refreshing Spring Water: one at a time
+check("single items show no count", single == nil or not ns.Tooltip.LineText(single, false):find("x%d"))
+qmin, qmax = ns.Tooltip.Qty("gather", 157, 2318)
+check("1.12 skinning count range", qmin == 1 and qmax == 2)
+qmin, qmax = ns.Tooltip.Qty("content", 5760, 7909)
+check("1.12 container count range", qmin == 1 and qmax == 2)
+check("count text formats", ns.QtyText(1, 2):find("x1-2", 1, true) and ns.QtyText(2, 2):find("x2", 1, true)
+  and ns.QtyText(1, 1) == "" and ns.QtyText(nil, nil) == "")
+ns.BuildDropIndex()
+local mwMob
+for _, m in ipairs(ns.MobsDropping(4338)) do if m.id == 660 then mwMob = m end end
+check("item search carries the count", mwMob and mwMob.qty and mwMob.qty[2] == 2)
+
+-- recorded stacks override the 1.12 range
+local g660 = guid(660, 1)
+Kill(g660, true, "Bloodscalp Witch Doctor")
+Loot({ { guid = g660, item = 4338, name = "Mageweave Cloth", q = 1, qty = 3 } })
+check("recorded stack size", MoldyDropsDB.own[660] and MoldyDropsDB.own[660].q and MoldyDropsDB.own[660].q[4338][2] == 3)
+qmin, qmax = ns.Tooltip.Qty("drop", 660, 4338)
+check("recorded count wins over 1.12", qmin == 3 and qmax == 3)
+local stats, _ = pcall(SlashCmdList.MOLDYDROPS, "stats")
+check("stats still works with counts recorded", stats)
+local str2 = ns.Codec.Export(MoldyDropsDB, "0.1.0", 16001)
+local text2 = ns.Codec.Base64Decode(str2:sub(6))
+check("export Q token", text2:find("Q:4338:3:3", 1, true) ~= nil)
+local snap2 = "!MD1!" .. js.global:btoa("MD1 S 1795400000 2\nN 660 40 4338:20 Q:4338:1:4 $:40:800:5:30\nS 157 1 30 2318:30 Q:2318:1:3\n")
+local comm2 = ns.Codec.ParseSnapshot(snap2)
+local c660 = comm2.npcs[660]
+check("snapshot Q parsed, no phantom items", c660.q and c660.q[4338][1] == 1 and c660.q[4338][2] == 4
+  and c660[1] == nil and c660[4] == nil and c660[40] == nil and c660[4338] == 20)
+check("snapshot Q on S records", comm2.gather[157].q and comm2.gather[157].q[2318][2] == 3 and comm2.gather[157][1] == nil)
 
 -- reset clears everything you recorded (last, since it wipes the test data)
 SlashCmdList.MOLDYDROPS("reset")

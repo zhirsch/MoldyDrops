@@ -6,6 +6,7 @@ local _, ns = ...
 --     MD1 S <generatedUnixTime> <contributors>             (snapshot, site -> addon)
 --     N <npcID> <kills> <itemID>:<count> ... [G:<corpses with any grey item>]
 --       [E:<corpses with no items>] [$:<corpses with gold>:<total copper>:<min>:<max>]
+--       [Q:<itemID>:<min count>:<max count> ...]   (also on S records)
 --     I <itemID> <quality> <item name>
 --     M <npcID> <mob name>
 --     S <npcID> <kind 1-5> <corpses gathered> <itemID>:<count> ...   (skinning/herb/mining/engineering/pick pocket)
@@ -64,6 +65,27 @@ local function SortedKeys(t, itemsOnly)
   return keys
 end
 
+-- "Q:<itemID>:<min>:<max>" tokens for items that came more than one at a time.
+local function QtyTokens(parts, e)
+  if not e.q then return end
+  local ids = {}
+  for itemID, q in pairs(e.q) do if q[2] > 1 then ids[#ids + 1] = itemID end end
+  table.sort(ids)
+  for _, itemID in ipairs(ids) do
+    parts[#parts + 1] = ("Q:%d:%d:%d"):format(itemID, e.q[itemID][1], e.q[itemID][2])
+  end
+end
+
+-- Removes tokens whose numbers would look like item pairs ($ gold, Q counts),
+-- and reads the Q counts into e.q.
+local function StripTokens(rest, e)
+  for itemID, qmin, qmax in rest:gmatch("Q:(%d+):(%d+):(%d+)") do
+    e.q = e.q or {}
+    e.q[tonumber(itemID)] = { tonumber(qmin), tonumber(qmax) }
+  end
+  return (rest:gsub("%$:[%d:]+", ""):gsub("Q:[%d:]+", ""))
+end
+
 -- Builds the upload string from this install's own recorded loot.
 function Codec.Export(db, addonVersion, build)
   local lines = {
@@ -82,6 +104,7 @@ function Codec.Export(db, addonVersion, build)
       if e[-1] then parts[#parts + 1] = "G:" .. e[-1] end
       if e[-2] then parts[#parts + 1] = "E:" .. e[-2] end
       if e[-3] then parts[#parts + 1] = ("$:%d:%d:%d:%d"):format(e[-3], e[-4], e[-5], e[-6]) end
+      QtyTokens(parts, e)
       lines[#lines + 1] = table.concat(parts, " ")
       mobCount = mobCount + 1
     end
@@ -96,6 +119,7 @@ function Codec.Export(db, addonVersion, build)
           parts[#parts + 1] = itemID .. ":" .. e[itemID]
           itemsUsed[itemID] = true
         end
+        QtyTokens(parts, e)
         lines[#lines + 1] = table.concat(parts, " ")
         named[npcID] = true
       end
@@ -144,8 +168,8 @@ function Codec.ParseSnapshot(str)
       npcID, kills = tonumber(npcID), tonumber(kills)
       if npcID and kills and kills > 0 then
         local e = { [0] = kills }
-        -- Item pairs; the $ gold token is removed first so its numbers aren't read as items.
-        for itemID, c in (rest:gsub("%$:[%d:]+", "")):gmatch("(%d+):(%d+)") do
+        -- Item pairs; $ and Q tokens are removed first so their numbers aren't read as items.
+        for itemID, c in StripTokens(rest, e):gmatch("(%d+):(%d+)") do
           itemID = tonumber(itemID)
           if itemID > 0 then e[itemID] = math.min(tonumber(c), kills) end
         end
@@ -172,7 +196,7 @@ function Codec.ParseSnapshot(str)
       npcID, gkind, corpses = tonumber(npcID), tonumber(gkind), tonumber(corpses)
       if npcID and gkind and gkind >= 1 and gkind <= 5 and corpses and corpses > 0 then
         local e = { kind = gkind, [0] = corpses }
-        for itemID, c in rest:gmatch("(%d+):(%d+)") do
+        for itemID, c in StripTokens(rest, e):gmatch("(%d+):(%d+)") do
           itemID = tonumber(itemID)
           if itemID > 0 then e[itemID] = math.min(tonumber(c), corpses) end
         end

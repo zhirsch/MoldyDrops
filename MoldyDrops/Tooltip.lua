@@ -43,6 +43,38 @@ local function Count(n, word) return n .. " " .. word .. (n == 1 and "" or "s") 
 
 local function ByRate(a, b) return a[2] > b[2] or (a[2] == b[2] and a[1] < b[1]) end
 
+-- How many of an item come at once: min, max (nil if unknown).
+-- section is "drop", "gather", "pick" (key = npcID) or "content" (key =
+-- container item ID). Recorded counts (community first, then yours) win
+-- over the 1.12 data.
+function Tooltip.Qty(section, key, itemID)
+  local db = ns.db
+  local own, comm
+  if section == "drop" then
+    own, comm = db.own[key], db.community.npcs and db.community.npcs[key]
+  elseif section == "gather" then
+    own, comm = db.ownGather[key], db.community.gather and db.community.gather[key]
+  elseif section == "pick" then
+    own, comm = db.ownPick[key], db.community.pick and db.community.pick[key]
+  end
+  for _, e in ipairs({ comm or false, own or false }) do
+    local q = e and e.q and e.q[itemID]
+    if q then return q[1], q[2] end
+  end
+  local b = ns.qty and ns.qty[section] and ns.qty[section][key]
+  if b then
+    for i = 1, #b - 2, 3 do
+      if b[i] == itemID then return b[i + 1], b[i + 2] end
+    end
+  end
+end
+
+-- " x1-2" (grey) when more than one can come at once, else "".
+function ns.QtyText(min, max)
+  if not max or max <= 1 then return "" end
+  return " |cff9d9d9dx" .. (min == max and tostring(max) or (min .. "-" .. max)) .. "|r"
+end
+
 -- From an observed entry, returns rows { itemID, percent } with all grey
 -- items folded into one row (itemID ns.GREY = corpses with any grey item /
 -- kills), plus the individual grey rows. Without a grey count in the data,
@@ -52,7 +84,7 @@ local function ObservedRows(e)
   local rows, greys = {}, {}
   local noGrey = 1
   for itemID, c in pairs(e) do
-    if itemID > 0 then
+    if type(itemID) == "number" and itemID > 0 then -- skips [0], negatives and e.q
       local _, quality = ns.ItemInfo(itemID)
       if quality == 0 then
         greys[#greys + 1] = { itemID, 100 * c / kills }
@@ -241,13 +273,13 @@ function Tooltip.Lines(npcID, maxRows, expand)
   if not rows then return nil end
   local lines, expandable = {}, false
   local function add(itemID, pct, kind)
-    lines[#lines + 1] = { itemID, pct, kind }
+    lines[#lines + 1] = { itemID, pct, kind, itemID ~= ns.GREY and { Tooltip.Qty("drop", npcID, itemID) } or nil }
     local inside = itemID ~= ns.GREY and Tooltip.Contents(itemID)
     if inside then
       expandable = true
       if expand then
         for j = 1, math.min(MAX_CONTENT_LINES, #inside) do
-          lines[#lines + 1] = { inside[j][1], inside[j][2], "content" }
+          lines[#lines + 1] = { inside[j][1], inside[j][2], "content", { Tooltip.Qty("content", itemID, inside[j][1]) } }
         end
       end
     end
@@ -269,9 +301,9 @@ end
 -- under the grey row; container contents are indented further, with their
 -- chance per container opened shown in grey.
 function Tooltip.LineText(line, expand)
-  local itemID, pct, kind = line[1], line[2], line[3]
+  local itemID, pct, kind, qty = line[1], line[2], line[3], line[4]
   local name, quality = ns.ItemInfo(itemID)
-  local text = QualityHex(quality or 1) .. name .. "|r"
+  local text = QualityHex(quality or 1) .. name .. "|r" .. (qty and ns.QtyText(qty[1], qty[2]) or "")
   if kind == "content" then
     return "      |cff808080in it:|r " .. text, ColoredPct(pct, quality)
   elseif kind == "grey" then
@@ -345,7 +377,8 @@ local function AddLoot(tooltip, unit)
     tooltip:AddDoubleLine(ns.GATHER_NAMES[kind] or "Gathering", note, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
     for i = 1, math.min(ns.TOP_N, #rows) do
       local name, quality = ns.ItemInfo(rows[i][1])
-      tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r", ColoredPct(rows[i][2], quality), 1, 1, 1, 1, 1, 1)
+      local qty = ns.QtyText(Tooltip.Qty(kind == ns.PICKPOCKET and "pick" or "gather", npcID, rows[i][1]))
+      tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r" .. qty, ColoredPct(rows[i][2], quality), 1, 1, 1, 1, 1, 1)
     end
     added = true
   end

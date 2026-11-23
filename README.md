@@ -27,6 +27,8 @@ Mobs you can skin, herb, mine or salvage with engineering get a second section i
 
 In either search window, **Ctrl+click** an item to see every mob that gives it (`/drops item`), or Ctrl+click a mob to see its drops (`search`). The **Back** button returns to the previous search. `/drops item` covers drops, gathering, pick pocketing (on a rogue), and items inside containers that mobs drop. For those, the chance is the container's chance times the item's chance inside it. `/drops item` only knows each mob's top 10 drops from the bundled 1.12 data (plus everything recorded or imported), so very rare world drops may be missing.
 
+Items that can come more than one at a time show the count range after the name, like **Mageweave Cloth x1-2**. Counts you record replace the 1.12 range.
+
 All grey (poor quality) items share one "Grey items" row. Hold **Shift** to list them individually, in the tooltip or the search window. Shift also lists what's inside containers such as clams, with the chance of each item per container opened. Container contents come from the 1.12 data, so containers that are new in WoW Forever don't show contents.
 
 ## Where the numbers come from

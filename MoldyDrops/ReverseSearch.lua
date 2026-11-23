@@ -20,7 +20,10 @@ function ns.BuildDropIndex()
   local function put(itemID, npcID, pct, note, gatherKind, via)
     if itemID == ns.GREY then return end
     index[itemID] = index[itemID] or {}
-    table.insert(index[itemID], { npcID, pct, note, gatherKind, via })
+    -- how many come at once, from the matching section
+    local section = via and "content" or (gatherKind == ns.PICKPOCKET and "pick") or (gatherKind and "gather") or "drop"
+    local qmin, qmax = ns.Tooltip.Qty(section, via or npcID, itemID)
+    table.insert(index[itemID], { npcID, pct, note, gatherKind, via, qmax and { qmin, qmax } or nil })
     local inside = not via and ns.Tooltip.Contents(itemID)
     for _, c in ipairs(inside or {}) do
       put(c[1], npcID, pct * c[2] / 100, note, gatherKind, itemID)
@@ -102,7 +105,7 @@ function ns.MobsDropping(itemID)
   for _, e in ipairs(index[itemID] or {}) do
     local name, minL, maxL = ns.MobInfo(e[1])
     out[#out + 1] = { id = e[1], name = name or ("NPC " .. e[1]), minL = minL, maxL = maxL, pct = e[2], note = e[3],
-      gather = e[4], via = e[5] }
+      gather = e[4], via = e[5], qty = e[6] }
   end
   table.sort(out, function(a, b)
     if a.pct ~= b.pct then return a.pct > b.pct end
@@ -134,7 +137,8 @@ local window = ns.CreateSearchWindow({
       local how = m.gather and ("  |cffffd100" .. (ns.GATHER_NAMES[m.gather] or "Gathering") .. "|r") or ""
       local via = m.via and ("  |cff808080in " .. ns.ItemInfo(m.via) .. "|r") or ""
       lines[i] = {
-        m.name .. (level ~= "" and ("  |cff808080" .. level .. "|r") or "") .. how .. via,
+        m.name .. (level ~= "" and ("  |cff808080" .. level .. "|r") or "")
+          .. (m.qty and ns.QtyText(m.qty[1], m.qty[2]) or "") .. how .. via,
         ns.ColoredPct(m.pct, r.quality),
         m,
       }

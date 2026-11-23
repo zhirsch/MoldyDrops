@@ -175,8 +175,9 @@ local LOOT_SLOT_MONEY = (Enum and Enum.LootSlotType and Enum.LootSlotType.Money)
 -- Reads the open loot window, skipping corpses already in `done`. Returns
 --   byCorpse: guid -> { [itemID] = true, [-1] = true if any grey item }
 --   money:    guid -> copper
+--   counts:   guid -> { [itemID] = how many }
 local function ReadLoot(done)
-  local byCorpse, money = {}, {}
+  local byCorpse, money, counts = {}, {}, {}
   local any = false
   for slot = 1, GetNumLootItems() do
     local slotType = GetLootSlotType(slot)
@@ -195,6 +196,9 @@ local function ReadLoot(done)
           local itemID = link and tonumber(link:match("item:(%d+)"))
           if itemID then
             byCorpse[guid][itemID] = true
+            local n = tonumber(Plain(sources[i + 1])) or 1
+            counts[guid] = counts[guid] or {}
+            counts[guid][itemID] = (counts[guid][itemID] or 0) + math.max(1, n)
             local _, name, _, _, quality = GetLootSlotInfo(slot)
             if name and not ns.db.items[itemID] then ns.db.items[itemID] = { name, quality or 1 } end
             -- [-1] counts corpses with at least one grey item, which the
@@ -205,7 +209,21 @@ local function ReadLoot(done)
       end
     end
   end
-  return any and byCorpse or nil, money
+  return any and byCorpse or nil, money, counts
+end
+
+-- Widens the recorded min/max count of each item in an entry (e.q[itemID] = { min, max }).
+local function NoteCounts(e, n)
+  if not n then return end
+  e.q = e.q or {}
+  for itemID, count in pairs(n) do
+    local q = e.q[itemID]
+    if q then
+      q[1], q[2] = math.min(q[1], count), math.max(q[2], count)
+    else
+      e.q[itemID] = { count, count }
+    end
+  end
 end
 
 -- Skinning, herbalism, mining or engineering a corpse (kind 1-4), or pick
@@ -215,7 +233,7 @@ local PICKPOCKET = 5
 local function RecordSection(kind, guids)
   local tbl = kind == PICKPOCKET and ns.db.ownPick or ns.db.ownGather
   local done = kind == PICKPOCKET and pickpocketed or gathered
-  local byCorpse = ReadLoot(done)
+  local byCorpse, _, counts = ReadLoot(done)
   if not byCorpse then return end
   for guid, items in pairs(byCorpse) do
     if not guids or guids[guid] then
@@ -230,6 +248,7 @@ local function RecordSection(kind, guids)
       for itemID in pairs(items) do
         if itemID > 0 then e[itemID] = (e[itemID] or 0) + 1 end
       end
+      NoteCounts(e, counts[guid])
     end
   end
 end
@@ -254,7 +273,7 @@ local function OnLootOpened()
   end
 
   if not IsSolo() then return end
-  local byCorpse, money = ReadLoot(looted)
+  local byCorpse, money, counts = ReadLoot(looted)
   if not byCorpse then return end
   for guid, items in pairs(byCorpse) do
     looted[guid] = true
@@ -268,6 +287,7 @@ local function OnLootOpened()
       end
       if not anyItem then NoteNoItems(guid) end
       if money[guid] then NoteGold(guid, money[guid]) end
+      NoteCounts(e, counts[guid])
     end
   end
 end
