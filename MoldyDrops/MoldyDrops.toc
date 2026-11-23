@@ -2,6 +2,7 @@
 ## Title: MoldyDrops
 ## Notes: Shows a mob's top 5 drops and drop rates in its tooltip. Records your own loot and shares it through export/import strings.
 ## Version: 0.1.0
+## X-License: GPL-3.0-or-later
 ## SavedVariables: MoldyDropsDB
 
 BaseData.lua

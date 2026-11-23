@@ -56,6 +56,8 @@ The window and frame code (`ExportUI.lua`, the UI half of `Search.lua`) isn't co
 - [docs/exchange-format.md](docs/exchange-format.md) specifies the `!MD1!` export and import strings.
 - [docs/website-plan.md](docs/website-plan.md) plans the community website.
 
-## License note
+## License
 
-`BaseData.lua` is generated from CMaNGOS data, which is GPL-2.0 licensed. Keep this repository GPL-compatible if you publish it with that file.
+MoldyDrops is licensed under the [GNU General Public License v3.0](LICENSE).
+
+`MoldyDrops/BaseData.lua` is generated from the [CMaNGOS classic-db](https://github.com/cmangos/classic-db) loot tables, which are also GPL-3.0. World of Warcraft names and game data are trademarks and copyrights of Blizzard Entertainment. This project isn't affiliated with Blizzard or CMaNGOS.
