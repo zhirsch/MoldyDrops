@@ -554,6 +554,23 @@ SlashCmdList.MOLDYDROPS("s vermin") -- what /drop s vermin runs
 check("/drop s opens the mob search", mw.shown)
 mw:Hide()
 
+-- anything that isn't a subcommand is a mob search; bare /drops is help
+local searched
+local realShow = ns.ShowSearch
+ns.ShowSearch = function(q) searched = q end
+SlashCmdList.MOLDYDROPS("  Defias Thug  ")
+check("/drops <mob name> searches for the whole text", searched == "Defias Thug", searched)
+searched = nil
+SlashCmdList.MOLDYDROPS("rsearch candle")
+check("old rsearch is now just a mob search for that text", searched == "rsearch candle", searched)
+searched = nil
+SlashCmdList.MOLDYDROPS("")
+SlashCmdList.MOLDYDROPS("help")
+check("bare /drops and /drops help show help, not a search", searched == nil)
+SlashCmdList.MOLDYDROPS("s kobold")
+check("/drops s still searches just the rest", searched == "kobold", searched)
+ns.ShowSearch = realShow
+
 -- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
 local sw = tostring(SRC["SearchWindow.lua"])
 check("list and detail rows don't wrap", sw:find("b.text:SetWordWrap(false)", 1, true) ~= nil
@@ -576,6 +593,13 @@ ok("import window opens", function() ns.ShowImport() end)
 ok("slash commands", function()
   for _, cmd in ipairs({ "", "search vermin", "item candle", "i candle", "stats", "help" }) do SlashCmdList.MOLDYDROPS(cmd) end
 end)
+
+-- reset clears everything you recorded (last, since it wipes the test data)
+SlashCmdList.MOLDYDROPS("reset")
+check("reset without confirm keeps data", next(MoldyDropsDB.own) ~= nil)
+SlashCmdList.MOLDYDROPS("reset confirm")
+check("reset confirm clears drops, gathering and pick pocketing",
+  next(MoldyDropsDB.own) == nil and next(MoldyDropsDB.ownGather) == nil and next(MoldyDropsDB.ownPick) == nil)
 
 log(("%d failures"):format(fails))
 return table.concat(out, "\n")

@@ -159,7 +159,7 @@ local function PrintStats()
 end
 
 local HELP = {
-  "|cffffffff/drops search <mob name>|r - find a mob and show its drops (short: /drop s)",
+  "|cffffffff/drops search <mob name>|r - find a mob and show its drops (short: /drop s, or just /drops <mob name>)",
   "|cffffffff/drops item <item name>|r - find an item and show the mobs that drop it (short: /drop i)",
   "|cffffffff/drops export|r - copy your recorded loot to upload to the website",
   "|cffffffff/drops import|r - paste community data from the website",
@@ -194,13 +194,16 @@ SlashCmdList.MOLDYDROPS = function(msg)
     PrintStats()
   elseif cmd == "reset" then
     if rest == "confirm" then
-      db.own = {}
-      ns.Print("your recorded loot was deleted.")
+      db.own, db.ownGather, db.ownPick = {}, {}, {}
+      ns.Print("your recorded loot, gathering and pick pocketing were deleted.")
     else
       ns.Print("this deletes all loot you've recorded. Type |cffffffff/drops reset confirm|r to do it.")
     end
-  else
+  elseif cmd == "" or cmd == "help" then
     ns.Print("commands:")
     for _, line in ipairs(HELP) do print("  " .. line) end
+  else
+    -- Not a subcommand: treat the whole text as a mob search ("/drops defias thug").
+    ns.ShowSearch((msg:gsub("^%s+", ""):gsub("%s+$", "")))
   end
 end

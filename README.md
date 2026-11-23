@@ -17,9 +17,9 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops stats` | Prints the state of the database |
 | `/drops tooltip` | Turns the tooltip on or off |
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
-| `/drops reset` | Deletes the loot you've recorded |
+| `/drops reset` | Deletes the loot, gathering and pick pocketing you've recorded |
 
-`/drop` works the same as `/drops`. Short forms: `/drop s <mob name>` for search, `/drop i <item name>` for item.
+`/drop` works the same as `/drops`. Short forms: `/drop s <mob name>` for search, `/drop i <item name>` for item. Anything that isn't a command searches mobs, so `/drops defias thug` is the same as `/drops search defias thug`. `/drops` on its own (or `/drops help`) lists the commands.
 
 Under the drops, the tooltip also shows the chance a corpse has **no items**, and the **gold** range with its average. The gold line is left out for mobs that don't drop gold, such as beasts. On a **rogue**, there's also a **Pick Pocket** section with the chance of each item per mob pick pocketed.
 
