@@ -71,6 +71,7 @@ function UnitIsDead(u) return units[u] and units[u].dead end
 function UnitIsTapDenied(u) return units[u] and units[u].tapDenied end
 function UnitExists(u) return units[u] ~= nil end
 function UnitIsPlayer() return false end
+function UnitCanAttack(_, u) return units[u] ~= nil and not units[u].friendly end
 function UnitName(u) return units[u] and units[u].name end
 local lootable = {}
 function CanLootUnit(guid) return lootable[guid] end
@@ -464,6 +465,22 @@ else
   check("found an item-window mob row to click", false)
 end
 ns.ShowSearch = realShowSearch
+
+-- the tooltip hook: loot for mobs you can attack, nothing for friendly NPCs
+local tipLines
+GameTooltip.GetUnit = function() return "x", "mouseover" end
+GameTooltip.AddLine = function() tipLines = tipLines + 1 end
+GameTooltip.AddDoubleLine = function() tipLines = tipLines + 1 end
+local function hover(npcID, friendly)
+  units.mouseover = { guid = guid(npcID, 999), friendly = friendly }
+  tipLines = 0
+  GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
+  units.mouseover = nil
+  return tipLines
+end
+check("tooltip adds loot for a hostile mob", hover(6, false) > 3)
+check("tooltip adds nothing for a friendly guard (Orgrimmar Grunt)", hover(3296, true) == 0)
+check("tooltip shows enemy-faction guards (attackable)", hover(3296, false) > 0)
 
 -- the windows build and fill without errors (stub frames)
 local function ok(name, fn)

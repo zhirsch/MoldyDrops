@@ -318,6 +318,11 @@ local function AddLoot(tooltip, unit)
   local db = ns.db
   if not db or not db.settings.enabled then return end
   if not unit or UnitIsPlayer(unit) then return end
+  -- Guards, vendors and other NPCs you can't attack: nothing to loot.
+  if UnitCanAttack then
+    local canAttack = UnitCanAttack("player", unit)
+    if not (issecretvalue and issecretvalue(canAttack)) and not canAttack then return end
+  end
   if db.settings.openWorldOnly and IsInInstance() then return end
 
   local npcID = ns.NpcIDFromGUID(UnitGUID(unit))
