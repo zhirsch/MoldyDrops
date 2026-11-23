@@ -616,6 +616,39 @@ ns.ShowSearch("kobold vermin", 6)
 check("no detail scrollbar when everything fits", not sbw.detailBar.shown)
 sbw:Hide()
 
+-- hover: item tooltip in the item list; 3D model for mobs
+ns.ShowModelPreview(6) -- build the panel so its model can be watched
+local preview = FrameNamed("MoldyDropsModelPreview")
+local modelArgs
+preview.model.SetCreature = function(_, id, display) modelArgs = { id, display } end
+ns.HideModelPreview()
+local lastLink
+GameTooltip.SetHyperlink = function(_, link) lastLink = link end
+
+ns.ShowItemSearch("golden pearl")
+local iwin = FrameNamed("MoldyDropsItemSearchFrame")
+iwin.buttons[1].OnEnter(iwin.buttons[1])
+check("hovering an item in the item list shows its tooltip", lastLink == "item:" .. iwin.buttons[1].result.id, lastLink)
+check("no model for items", not preview.shown)
+iwin.buttons[1].OnLeave(iwin.buttons[1])
+local mobRow
+for _, r in ipairs(iwin.detail.rows) do if r.shown and type(r.data) == "table" and r.data.id then mobRow = r break end end
+mobRow.OnEnter(mobRow)
+check("hovering a mob row shows its 3D model", preview.shown and modelArgs and modelArgs[1] == mobRow.data.id,
+  modelArgs and modelArgs[1])
+check("model panel sits under the tooltip", preview.shown)
+mobRow.OnLeave(mobRow)
+check("leaving the row hides the model", not preview.shown)
+
+ns.ShowSearch("azuregos")
+local mwin = FrameNamed("MoldyDropsSearchFrame")
+modelArgs = nil
+mwin.buttons[1].OnEnter(mwin.buttons[1])
+check("hovering a mob in the mob list shows its model, with the 1.12 model ID",
+  preview.shown and modelArgs and modelArgs[1] == 6109 and modelArgs[2] == 11460, modelArgs and tostring(modelArgs[2]))
+mwin:Hide()
+check("closing the window hides the model", not preview.shown)
+
 -- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
 local sw = tostring(SRC["SearchWindow.lua"])
 check("list and detail rows don't wrap", sw:find("b.text:SetWordWrap(false)", 1, true) ~= nil

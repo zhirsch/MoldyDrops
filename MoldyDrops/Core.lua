@@ -98,7 +98,7 @@ function ns.MobInfo(npcID)
   local base = ns.mobs and ns.mobs[npcID]
   local seen = ns.db and ns.db.mobs[npcID]
   local name = (seen and seen[1]) or (base and base[1])
-  return name, base and base[2], base and base[3]
+  return name, base and base[2], base and base[3], base and base[4] -- name, min level, max level, model ID
 end
 
 local f = CreateFrame("Frame")

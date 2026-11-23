@@ -45,6 +45,13 @@ local window = ns.CreateSearchWindow({
   noun = "mob",
   search = ns.SearchMobs,
   listText = function(r) return r.name, ns.LevelRange(r.minL, r.maxL) end,
+  -- Mob list: name and level, with the mob's 3D model underneath.
+  onListEnter = function(_, r)
+    GameTooltip:SetText(r.name)
+    local level = ns.LevelRange(r.minL, r.maxL)
+    if level ~= "" then GameTooltip:AddLine("Level " .. level, 1, 1, 1) end
+  end,
+  listModel = function(r) return r.id end,
   detail = function(r)
     local level = ns.LevelRange(r.minL, r.maxL)
     local header = {

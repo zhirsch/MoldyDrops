@@ -194,7 +194,7 @@ public static class LootBuilder
         var lootIdOf = new Dictionary<int, int>();
         var openWorld = new HashSet<int>();
         var itemInfo = new Dictionary<int, Tuple<string, int>>();
-        var mobInfo = new Dictionary<int, Tuple<string, int, int>>();
+        var mobInfo = new Dictionary<int, Tuple<string, int, int, int>>(); // name, min level, max level, model (display) ID
         var gatherOf = new Dictionary<int, Tuple<int, int>>(); // npc -> (skinning loot id, gather kind)
         var goldOf = new Dictionary<int, Tuple<int, int>>();   // npc -> (min copper, max copper)
         var pickOf = new Dictionary<int, int>();                // npc -> pickpocketing loot id
@@ -225,7 +225,7 @@ public static class LootBuilder
                             if (pick > 0) pickOf[I(f[0])] = pick;
                             int skin = I(f[58]);
                             if (skin > 0) gatherOf[I(f[0])] = Tuple.Create(skin, GatherKind(I(f[20])));
-                            mobInfo[I(f[0])] = Tuple.Create(f[1] ?? "", I(f[3]), I(f[4]));
+                            mobInfo[I(f[0])] = Tuple.Create(f[1] ?? "", I(f[3]), I(f[4]), I(f[5]));
                         }
                         break;
                     case "item_template":
@@ -306,10 +306,10 @@ public static class LootBuilder
             }
             sb.Append("},");
             npcLines.Add(sb.ToString());
-            Tuple<string, int, int> mi;
+            Tuple<string, int, int, int> mi;
             if (mobInfo.TryGetValue(npc, out mi))
             {
-                mobLines.Add(string.Format("[{0}]={{{1},{2},{3}}},", npc, LuaStr(mi.Item1), mi.Item2, mi.Item3));
+                mobLines.Add(string.Format("[{0}]={{{1},{2},{3},{4}}},", npc, LuaStr(mi.Item1), mi.Item2, mi.Item3, mi.Item4));
                 namedMobs.Add(npc);
             }
         }
@@ -330,10 +330,10 @@ public static class LootBuilder
             if (hasGold) es.Append(',').Append(gold.Item1).Append(',').Append(gold.Item2);
             es.Append("},");
             extraLines.Add(es.ToString());
-            Tuple<string, int, int> em;
+            Tuple<string, int, int, int> em;
             if (!namedMobs.Contains(npc) && mobInfo.TryGetValue(npc, out em))
             {
-                mobLines.Add(string.Format("[{0}]={{{1},{2},{3}}},", npc, LuaStr(em.Item1), em.Item2, em.Item3));
+                mobLines.Add(string.Format("[{0}]={{{1},{2},{3},{4}}},", npc, LuaStr(em.Item1), em.Item2, em.Item3, em.Item4));
                 namedMobs.Add(npc);
             }
         }
@@ -366,10 +366,10 @@ public static class LootBuilder
             gs.Append("},");
             gatherLines.Add(gs.ToString());
             kindCounts[g.Item2]++;
-            Tuple<string, int, int> gm;
+            Tuple<string, int, int, int> gm;
             if (!namedMobs.Contains(npc) && mobInfo.TryGetValue(npc, out gm))
             {
-                mobLines.Add(string.Format("[{0}]={{{1},{2},{3}}},", npc, LuaStr(gm.Item1), gm.Item2, gm.Item3));
+                mobLines.Add(string.Format("[{0}]={{{1},{2},{3},{4}}},", npc, LuaStr(gm.Item1), gm.Item2, gm.Item3, gm.Item4));
                 namedMobs.Add(npc);
             }
         }
@@ -433,7 +433,7 @@ public static class LootBuilder
         o.AppendLine("-- pick[npcID] = { 5, itemID, percent per mob pick pocketed, ... }");
         o.AppendLine("-- extra[npcID] ={ percent chance of no items [, min copper, max copper] } (gold omitted if none)");
         o.AppendLine("-- gather[npcID] = { kind, itemID, percent per corpse gathered, ... }; kind 1 skinning, 2 herbalism, 3 mining, 4 engineering");
-        o.AppendLine("-- base[npcID] = { itemID, percent, ... }   items[itemID] = { name, quality }   mobs[npcID] = { name, minLevel, maxLevel }");
+        o.AppendLine("-- base[npcID] = { itemID, percent, ... }   items[itemID] = { name, quality }   mobs[npcID] = { name, minLevel, maxLevel, modelDisplayID }");
         o.AppendLine("local _, ns = ...");
         o.AppendLine("ns.items = ns.items or {}");
         o.AppendLine("local items = ns.items");

@@ -156,6 +156,11 @@ local window = ns.CreateSearchWindow({
     GameTooltip:AddLine("Ctrl+click to see all its drops.", 0.6, 0.6, 0.6)
   end,
   onRowClick = function(m) ns.ShowSearch(m.name, m.id) end,
+  rowModel = function(m) return m.id end, -- mob rows: show the mob's 3D model
+  -- Item list: the game's item tooltip.
+  onListEnter = function(_, r)
+    GameTooltip:SetHyperlink("item:" .. r.id)
+  end,
 })
 
 -- query: text to search for; itemID: optionally, which match to select.

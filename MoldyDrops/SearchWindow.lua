@@ -10,6 +10,9 @@ local _, ns = ...
 --   listText(r)          -> left text, right text for a result's list entry
 --   detail(r)            -> header { name, sub, source }, lines { { left, right, data }, ... }
 --   onRowEnter(row, data)  optional, fills GameTooltip for a detail line
+--   rowModel(data)         optional, npcID whose 3D model to show for a detail line
+--   onListEnter(button, r) optional, fills GameTooltip for a list entry
+--   listModel(r)           optional, npcID whose 3D model to show for a list entry
 --   onRowClick(data)       optional, called on Ctrl+click of a detail line
 --   noun                 "mob" or "item", for the status text
 
@@ -223,6 +226,7 @@ function ns.CreateSearchWindow(spec)
 
     -- Closing the search window (not swapping to the other one) ends the history.
     f:SetScript("OnHide", function()
+      ns.HideModelPreview()
       if not swapping then
         wipe(history)
         UpdateBackButtons()
@@ -265,6 +269,16 @@ function ns.CreateSearchWindow(spec)
         self.sel:SetShown(self.result ~= nil and self.result.id == win.selected)
       end
       b:SetScript("OnClick", function(self) Select(self.result) end)
+      -- Hover a result: item tooltip for items, tooltip + 3D model for mobs.
+      b:SetScript("OnEnter", function(self)
+        if not (spec.onListEnter and self.result) then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        spec.onListEnter(self, self.result)
+        GameTooltip:Show()
+        local npcID = spec.listModel and spec.listModel(self.result)
+        if npcID then ns.ShowModelPreview(npcID) end
+      end)
+      b:SetScript("OnLeave", function() GameTooltip:Hide(); ns.HideModelPreview() end)
       f.buttons[i] = b
     end
 
@@ -312,9 +326,12 @@ function ns.CreateSearchWindow(spec)
           GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
           spec.onRowEnter(self, self.data)
           GameTooltip:Show()
+          -- 3D model under the tooltip when the row is a mob
+          local npcID = spec.rowModel and spec.rowModel(self.data)
+          if npcID then ns.ShowModelPreview(npcID) end
         end
       end)
-      row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+      row:SetScript("OnLeave", function() GameTooltip:Hide(); ns.HideModelPreview() end)
       -- Ctrl+click jumps to the other search (item -> /drops item, mob -> /drops search).
       row:SetScript("OnClick", function(self)
         if spec.onRowClick and self.data ~= nil and IsControlKeyDown() then spec.onRowClick(self.data) end
