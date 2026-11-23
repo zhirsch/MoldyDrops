@@ -38,15 +38,30 @@ stubMT.__index = function(_, k)
 end
 UIParent = Stub()
 ChatFontNormal = Stub()
-function CreateFrame()
+function CreateFrame(_, name)
   local f = Stub()
+  f.frameName = name
   f.events = {}
   f.RegisterEvent = function(self, e) self.events[e] = true end
   f.UnregisterEvent = function(self, e) self.events[e] = nil end
   f.SetScript = function(self, k, fn) self[k] = fn end
   f.HookScript = function(self, k, fn) self["hook_" .. k] = fn end
+  -- visibility and position, so window behavior can be checked
+  f.shown = false
+  f.Show = function(self) self.shown = true end
+  f.Hide = function(self) self.shown = false end
+  f.IsShown = function(self) return self.shown end
+  f.left, f.top = 300, 700
+  f.GetLeft = function(self) return self.left end
+  f.GetTop = function(self) return self.top end
+  f.SetPoint = function(self, point, rel, relPoint, x, y)
+    if point == "TOPLEFT" and relPoint == "BOTTOMLEFT" then self.left, self.top = x, y end
+  end
   frames[#frames + 1] = f
   return f
+end
+local function FrameNamed(name)
+  for _, f in ipairs(frames) do if f.frameName == name then return f end end
 end
 local function Fire(event, ...)
   for _, f in ipairs(frames) do
@@ -465,6 +480,19 @@ else
   check("found an item-window mob row to click", false)
 end
 ns.ShowSearch = realShowSearch
+
+-- jumping between searches swaps windows in place instead of stacking them
+ns.ShowSearch("azuregos")
+local mobWin = FrameNamed("MoldyDropsSearchFrame")
+mobWin.left, mobWin.top = 123, 456 -- the user dragged it here
+ns.ShowItemSearch("sack of gems")
+local itemWin = FrameNamed("MoldyDropsItemSearchFrame")
+check("jump closes the old window", mobWin and not mobWin.shown and itemWin and itemWin.shown)
+check("new window opens where the old one was", itemWin and itemWin.left == 123 and itemWin.top == 456,
+  itemWin and (itemWin.left .. "," .. itemWin.top))
+ns.ShowSearch("azuregos", 6109)
+check("jumping back swaps again", mobWin.shown and not itemWin.shown and mobWin.left == 123)
+mobWin:Hide()
 
 -- the tooltip hook: loot for mobs you can attack, nothing for friendly NPCs
 local tipLines

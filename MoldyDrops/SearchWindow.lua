@@ -13,6 +13,8 @@ local _, ns = ...
 --   onRowClick(data)       optional, called on Ctrl+click of a detail line
 --   noun                 "mob" or "item", for the status text
 
+local openFrames = {}     -- every search window's frame, to keep only one open
+
 local VISIBLE = 18        -- list entries shown
 local DETAIL_ROWS = 18    -- detail lines shown
 local MAX_RESULTS = 200
@@ -230,7 +232,22 @@ function ns.CreateSearchWindow(spec)
   end
 
   function win:Open(query, selectID)
-    if not f then Build() end
+    if not f then
+      Build()
+      openFrames[#openFrames + 1] = f
+    end
+    -- Only one search window at a time: if another is open (e.g. after a
+    -- Ctrl+click jump), close it and open this one in its place.
+    for _, other in ipairs(openFrames) do
+      if other ~= f and other:IsShown() then
+        local left, top = other:GetLeft(), other:GetTop()
+        other:Hide()
+        if left and top then
+          f:ClearAllPoints()
+          f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+        end
+      end
+    end
     if spec.onOpen then spec.onOpen() end
     f:Show()
     f.box:SetText(query or "")
