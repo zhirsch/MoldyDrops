@@ -49,7 +49,11 @@ function CreateFrame(_, name)
   -- visibility and position, so window behavior can be checked
   f.shown = false
   f.Show = function(self) self.shown = true end
-  f.Hide = function(self) self.shown = false end
+  f.Hide = function(self)
+    local was = self.shown
+    self.shown = false
+    if was and rawget(self, "OnHide") then self.OnHide(self) end -- like the real client
+  end
   f.IsShown = function(self) return self.shown end
   f.left, f.top = 300, 700
   f.GetLeft = function(self) return self.left end
@@ -492,6 +496,26 @@ check("new window opens where the old one was", itemWin and itemWin.left == 123 
   itemWin and (itemWin.left .. "," .. itemWin.top))
 ns.ShowSearch("azuregos", 6109)
 check("jumping back swaps again", mobWin.shown and not itemWin.shown and mobWin.left == 123)
+mobWin:Hide()
+check("closing the window clears Back history", ns.SearchHistoryDepth() == 0, ns.SearchHistoryDepth())
+
+-- Back button: mob -> item -> mob, then back twice
+ns.ShowSearch("azuregos", 6109)
+check("fresh search has nothing to go back to", ns.SearchHistoryDepth() == 0, ns.SearchHistoryDepth())
+ns.ShowItemSearch("Blue Sack of Gems")     -- Ctrl+click on a drop
+local sackID = (ns.SearchItems("Blue Sack of Gems")[1] or {}).id
+ns.ShowSearch("defias thug", 38)            -- Ctrl+click on a mob there
+check("two jumps recorded", ns.SearchHistoryDepth() == 2, ns.SearchHistoryDepth())
+itemWin.left, itemWin.top = 0, 0
+mobWin.back.OnClick(mobWin.back)             -- Back
+check("Back returns to the item search", itemWin.shown and not mobWin.shown and ns.SearchHistoryDepth() == 1)
+check("Back reopens in the same place", itemWin.left == mobWin.left and itemWin.top == mobWin.top)
+itemWin.back.OnClick(itemWin.back)           -- Back again
+check("Back again returns to the first mob search", mobWin.shown and not itemWin.shown and ns.SearchHistoryDepth() == 0)
+local mobs = ns.SearchMobs("azuregos")
+check("first search's text and selection restored", mobs[1] and mobs[1].id == 6109)
+mobWin.back.OnClick(mobWin.back)             -- nothing left: no-op
+check("Back with empty history does nothing", mobWin.shown and ns.SearchHistoryDepth() == 0)
 mobWin:Hide()
 
 -- the tooltip hook: loot for mobs you can attack, nothing for friendly NPCs

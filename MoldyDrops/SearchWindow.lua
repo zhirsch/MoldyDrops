@@ -14,6 +14,22 @@ local _, ns = ...
 --   noun                 "mob" or "item", for the status text
 
 local openFrames = {}     -- every search window's frame, to keep only one open
+local windows = {}        -- every search window object
+-- Back history, shared by both windows: { { win, query, selectedID }, ... }.
+-- Cleared when the search window is closed.
+local history = {}
+local swapping = false    -- true while one window replaces another
+local MAX_HISTORY = 50
+
+function ns.SearchHistoryDepth() return #history end
+
+local function UpdateBackButtons()
+  for _, f in ipairs(openFrames) do
+    if f.back then
+      if #history > 0 then f.back:Enable() else f.back:Disable() end
+    end
+  end
+end
 
 local VISIBLE = 18        -- list entries shown
 local DETAIL_ROWS = 18    -- detail lines shown
@@ -148,6 +164,22 @@ function ns.CreateSearchWindow(spec)
     f.count = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     f.count:SetPoint("BOTTOMLEFT", 18, 14)
 
+    -- Back: return to the previous search (after Ctrl+click jumps).
+    local back = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    back:SetSize(80, 22)
+    back:SetPoint("BOTTOMRIGHT", -16, 10)
+    back:SetText("< Back")
+    back:SetScript("OnClick", function() ns.SearchBack() end)
+    f.back = back
+
+    -- Closing the search window (not swapping to the other one) ends the history.
+    f:SetScript("OnHide", function()
+      if not swapping then
+        wipe(history)
+        UpdateBackButtons()
+      end
+    end)
+
     local list = CreateFrame("Frame", nil, f)
     list:SetPoint("TOPLEFT", 16, -62)
     list:SetSize(232, VISIBLE * 21)
@@ -231,13 +263,26 @@ function ns.CreateSearchWindow(spec)
     end
   end
 
-  function win:Open(query, selectID)
+  function win:IsShown() return f ~= nil and f:IsShown() end
+
+  -- fromBack: reopening a history entry, so don't record the current view.
+  function win:Open(query, selectID, fromBack)
     if not f then
       Build()
       openFrames[#openFrames + 1] = f
     end
+    -- Remember what's on screen now, so Back can return to it.
+    if not fromBack then
+      for _, w in ipairs(windows) do
+        if w:IsShown() and w.query ~= "" then
+          history[#history + 1] = { w, w.query, w.selected }
+          if #history > MAX_HISTORY then table.remove(history, 1) end
+        end
+      end
+    end
     -- Only one search window at a time: if another is open (e.g. after a
     -- Ctrl+click jump), close it and open this one in its place.
+    swapping = true
     for _, other in ipairs(openFrames) do
       if other ~= f and other:IsShown() then
         local left, top = other:GetLeft(), other:GetTop()
@@ -248,12 +293,14 @@ function ns.CreateSearchWindow(spec)
         end
       end
     end
+    swapping = false
     if spec.onOpen then spec.onOpen() end
     f:Show()
     f.box:SetText(query or "")
     f.box:SetFocus()
     f.box:HighlightText()
     RunSearch(query, selectID)
+    UpdateBackButtons()
   end
 
   -- Redraw the selected entry (e.g. when Shift changes).
@@ -264,5 +311,13 @@ function ns.CreateSearchWindow(spec)
     end
   end
 
+  windows[#windows + 1] = win
   return win
+end
+
+-- Go back to the previous search, in whichever window it was.
+function ns.SearchBack()
+  local entry = table.remove(history)
+  if not entry then return end
+  entry[1]:Open(entry[2], entry[3], true)
 end
