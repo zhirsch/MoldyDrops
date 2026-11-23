@@ -123,6 +123,7 @@ function ns.CreateSearchWindow(spec)
   local function Select(r, keepScroll)
     local d = f.detail
     win.selected = r and r.id
+    win.selectedResult = r
     for _, b in ipairs(f.buttons) do b:UpdateHighlight() end
     if not keepScroll then win.detailOffset = 0 end
     if not r then
@@ -131,6 +132,9 @@ function ns.CreateSearchWindow(spec)
     else
       local header, lines = spec.detail(r)
       d.name:SetText(header.name or "")
+      -- The hover area covers just the title text.
+      local w = d.name.GetStringWidth and d.name:GetStringWidth()
+      if type(w) == "number" and w > 0 then d.nameHover:SetWidth(w) end
       d.sub:SetText(header.sub or "")
       d.source:SetText(header.source or "")
       win.lines = lines or {}
@@ -300,6 +304,22 @@ function ns.CreateSearchWindow(spec)
     d.name:SetPoint("RIGHT")
     d.name:SetJustifyH("LEFT")
     d.name:SetWordWrap(false)
+    -- Hovering the title shows the same as hovering the entry in the list:
+    -- the item's tooltip, or the mob's tooltip and 3D model.
+    local nameHover = CreateFrame("Button", nil, d)
+    nameHover:SetPoint("TOPLEFT", d.name, "TOPLEFT")
+    nameHover:SetSize(200, 20)
+    nameHover:SetScript("OnEnter", function(self)
+      local r = win.selectedResult
+      if not (r and spec.onListEnter) then return end
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      spec.onListEnter(self, r)
+      GameTooltip:Show()
+      local npcID = spec.listModel and spec.listModel(r)
+      if npcID then ns.ShowModelPreview(npcID) end
+    end)
+    nameHover:SetScript("OnLeave", function() GameTooltip:Hide(); ns.HideModelPreview() end)
+    d.nameHover = nameHover
     d.sub = d:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     d.sub:SetPoint("TOPLEFT", d.name, "BOTTOMLEFT", 0, -4)
     d.source = d:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")

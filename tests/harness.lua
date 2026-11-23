@@ -646,6 +646,21 @@ modelArgs = nil
 mwin.buttons[1].OnEnter(mwin.buttons[1])
 check("hovering a mob in the mob list shows its model, with the 1.12 model ID",
   preview.shown and modelArgs and modelArgs[1] == 6109 and modelArgs[2] == 11460, modelArgs and tostring(modelArgs[2]))
+mwin.buttons[1].OnLeave(mwin.buttons[1])
+
+-- hovering the big title of the selected entry
+modelArgs = nil
+mwin.detail.nameHover.OnEnter(mwin.detail.nameHover)
+check("hovering the mob title shows its model", preview.shown and modelArgs and modelArgs[1] == 6109)
+mwin.detail.nameHover.OnLeave(mwin.detail.nameHover)
+check("leaving the title hides the model", not preview.shown)
+ns.ShowItemSearch("Gray Sack of Gems")
+lastLink = nil
+iwin.detail.nameHover.OnEnter(iwin.detail.nameHover)
+check("hovering the item title shows the item tooltip", lastLink == "item:17964", lastLink)
+iwin.detail.nameHover.OnLeave(iwin.detail.nameHover)
+ns.ShowSearch("azuregos")
+mwin.buttons[1].OnEnter(mwin.buttons[1])
 mwin:Hide()
 check("closing the window hides the model", not preview.shown)
 
