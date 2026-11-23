@@ -546,6 +546,14 @@ SlashCmdList.MOLDYDROPS("i candle")
 check("/drops i is a short form", iw.shown)
 iw:Hide()
 
+-- /drop is registered as an alias, and "s" opens the mob search
+check("/drop is registered", SLASH_MOLDYDROPS1 == "/drops" and SLASH_MOLDYDROPS3 == "/drop")
+local mw = FrameNamed("MoldyDropsSearchFrame")
+mw:Hide()
+SlashCmdList.MOLDYDROPS("s vermin") -- what /drop s vermin runs
+check("/drop s opens the mob search", mw.shown)
+mw:Hide()
+
 -- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
 local sw = tostring(SRC["SearchWindow.lua"])
 check("list and detail rows don't wrap", sw:find("b.text:SetWordWrap(false)", 1, true) ~= nil

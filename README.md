@@ -19,6 +19,8 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
 | `/drops reset` | Deletes the loot you've recorded |
 
+`/drop` works the same as `/drops`. Short forms: `/drop s <mob name>` for search, `/drop i <item name>` for item.
+
 Under the drops, the tooltip also shows the chance a corpse has **no items**, and the **gold** range with its average. The gold line is left out for mobs that don't drop gold, such as beasts. On a **rogue**, there's also a **Pick Pocket** section with the chance of each item per mob pick pocketed.
 
 Mobs you can skin, herb, mine or salvage with engineering get a second section in the tooltip and search window, with the chance of each item per corpse gathered. The 1.12 data only covers skinning, since herb, mining and engineering mobs came later; the addon records what you skin, herb and mine, so those fill in from your recordings and the community data.

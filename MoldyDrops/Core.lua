@@ -159,8 +159,8 @@ local function PrintStats()
 end
 
 local HELP = {
-  "|cffffffff/drops search <mob name>|r - find a mob and show its drops",
-  "|cffffffff/drops item <item name>|r - find an item and show the mobs that drop it",
+  "|cffffffff/drops search <mob name>|r - find a mob and show its drops (short: /drop s)",
+  "|cffffffff/drops item <item name>|r - find an item and show the mobs that drop it (short: /drop i)",
   "|cffffffff/drops export|r - copy your recorded loot to upload to the website",
   "|cffffffff/drops import|r - paste community data from the website",
   "|cffffffff/drops stats|r - show the state of the database",
@@ -171,6 +171,7 @@ local HELP = {
 
 SLASH_MOLDYDROPS1 = "/drops"
 SLASH_MOLDYDROPS2 = "/moldydrops"
+SLASH_MOLDYDROPS3 = "/drop"
 SlashCmdList.MOLDYDROPS = function(msg)
   local db = ns.db
   local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
