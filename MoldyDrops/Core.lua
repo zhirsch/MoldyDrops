@@ -137,7 +137,7 @@ local function PrintStats()
   print(("  Tooltip: %s, %s; %s"):format(
     db.settings.enabled and "on" or "off", db.settings.openWorldOnly and "open world only" or "everywhere",
     ns.recordingDisabled and ("|cffff4040recording off (missing " .. ns.recordingDisabled .. ")|r")
-      or "recording only while solo"))
+      or ("recording while solo, kills seen by " .. (ns.killMethod or "?"))))
 end
 
 local HELP = {

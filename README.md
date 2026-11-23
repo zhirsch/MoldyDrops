@@ -30,7 +30,8 @@ For each mob, the addon uses the first of these that applies:
 
 Recording rules, which keep the rates unbiased:
 - It records only while you're solo, because in a group other people loot corpses you never see.
-- A kill counts when you loot the corpse, or when a corpse you killed turns out to be empty. Corpses you skip aren't counted.
+- A kill counts when you loot the corpse, or when a mob you were fighting dies and its corpse turns out to be empty. Corpses you skip aren't counted.
+- WoW Forever doesn't let addons read the combat log, so deaths are spotted through your target, focus, mouseover and enemy nameplates. Turn on enemy nameplates (default key: V) so empty corpses of mobs you weren't targeting are counted too.
 - Pick pocketing, skinning, gathering and fishing are ignored.
 
 ## Rebuilding the 1.12 data

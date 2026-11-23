@@ -65,8 +65,12 @@ function UnitName(u) return units[u] and units[u].name end
 local lootable = {}
 function CanLootUnit(guid) return lootable[guid] end
 C_Timer = { After = function(_, fn) fn() end }
-local cl
-function CombatLogGetCurrentEventInfo() return table.unpack(cl) end
+-- Like WoW Forever, no readable combat log: kills come from unit tokens.
+CombatLogGetCurrentEventInfo = nil
+C_CombatLog = nil
+function UnitThreatSituation(who, u) return units[u] and units[u].threat end
+function UnitAffectingCombat(u) return units[u] and units[u].combat end
+function UnitIsUnit(a, b) return UnitGUID(a) ~= nil and UnitGUID(a) == UnitGUID(b) end
 local loot = {}
 function GetNumLootItems() return #loot end
 function GetLootSourceInfo(slot) return loot[slot].guid, 1 end
@@ -94,11 +98,18 @@ check("base data loaded (grey row first)", ns.base[6] and ns.base[6][1] == 0 and
 local PLAYER = "Player-1-00000001"
 units.player = { guid = PLAYER }
 local function guid(npc, n) return ("Creature-0-1-0-12-%d-%08d"):format(npc, n) end
-local function Kill(g, hasLoot, killName)
+-- A mob on a nameplate fights you (or not, if engaged is false), then dies.
+local function Kill(g, hasLoot, killName, engaged)
   lootable[g] = hasLoot
-  cl = { 0, "PARTY_KILL", false, PLAYER, "me", 0, 0, g, killName or "Kobold Vermin" }
-  Fire("COMBAT_LOG_EVENT_UNFILTERED")
+  units.nameplate1 = { guid = g, name = killName or "Kobold Vermin", combat = true,
+    threat = (engaged ~= false) and 1 or nil }
+  Fire("UNIT_THREAT_LIST_UPDATE", "nameplate1")
+  units.nameplate1.dead = true
+  Fire("UNIT_HEALTH", "nameplate1")
+  Fire("NAME_PLATE_UNIT_REMOVED", "nameplate1")
+  units.nameplate1 = nil
 end
+check("kills seen by threat tracking", ns.killMethod == "threat tracking", ns.killMethod)
 local function Loot(items)
   loot = items
   Fire("LOOT_OPENED")
@@ -130,6 +141,8 @@ units.target = { guid = g6, tapDenied = true }
 Fire("PLAYER_TARGET_CHANGED")
 units.target = nil
 Kill(g6, false)
+-- 6b: a mob dies that you never fought (someone else's kill): ignored
+Kill(guid(6, 66), false, nil, false)
 -- 7: in a group: ignored
 grouped = true
 local g7 = guid(6, 7)

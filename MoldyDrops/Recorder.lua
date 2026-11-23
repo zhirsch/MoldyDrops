@@ -6,10 +6,16 @@ local _, ns = ...
 -- matter as much as full ones. Rules that keep the numbers honest:
 --   * Only record while solo. In a group, other people loot corpses you
 --     never see, which would undercount drops.
---   * A kill counts when you loot the corpse, or when you or your pet land
---     the killing blow (PARTY_KILL) on an untapped mob whose corpse turns
---     out to be empty. Corpses you walk past without looting don't count.
---     (If the client lacks CanLootUnit, every killing blow counts instead.)
+--   * A kill counts when you loot the corpse, or when a mob you were fighting
+--     (you or your pet on its threat table, not tagged by someone else) dies
+--     and its corpse turns out to be empty. Corpses you walk past without
+--     looting don't count. (If the client lacks CanLootUnit, every such
+--     death counts instead.)
+--   * Deaths are seen through unit tokens (target, mouseover, focus,
+--     nameplates), because modern clients, WoW Forever included, don't let
+--     addons read the combat log. Where the combat log is readable, its
+--     PARTY_KILL events are used as well. Turn on enemy nameplates so mobs you
+--     aren't targeting are seen too.
 --   * Each corpse is recorded once (re-opening the loot window, skinning
 --     and the like are ignored). Pick pocketing and gathering are ignored.
 local Recorder = {}
@@ -19,6 +25,8 @@ local counted = {}    -- [guid] = true once its kill has been counted
 local looted = {}     -- [guid] = true once its loot has been recorded
 local tapDenied = {}  -- [guid] = true if we saw it tagged by someone else
 local names = {}      -- [guid] = unit name, from the combat log or a unit token
+local engaged = {}    -- [guid] = true if you or your pet were on its threat table
+local died = {}       -- [guid] = true once its death has been handled
 local lastGatherAt = 0
 local gatherSpells = {}
 
@@ -61,32 +69,76 @@ local function CountKill(guid)
   end
 end
 
-local function NoteUnit(unit)
-  local guid = UnitGUID(unit)
-  if not guid or not NpcIDFromGUID(guid) then return end
-  names[guid] = UnitName(unit)
-  if UnitIsTapDenied and UnitIsTapDenied(unit) and not UnitIsDead(unit) then
-    tapDenied[guid] = true
-  end
+-- Modern clients can hand addons "secret" values they aren't allowed to read.
+local function Plain(v)
+  if issecretvalue and issecretvalue(v) then return nil end
+  return v
 end
 
-local function OnCombatLog()
-  local _, subevent, _, sourceGUID, _, _, _, destGUID, destName = CombatLogGetCurrentEventInfo()
-  if subevent ~= "PARTY_KILL" then return end
-  if destName and NpcIDFromGUID(destGUID) then names[destGUID] = destName end
-  if sourceGUID ~= UnitGUID("player") and sourceGUID ~= UnitGUID("pet") then return end
-  if not IsSolo() or tapDenied[destGUID] or not NpcIDFromGUID(destGUID) then return end
+local function OnThreatTable(unit)
+  if not UnitThreatSituation then return false end
+  for _, who in ipairs({ "player", "pet" }) do
+    if UnitExists(who) and Plain(UnitThreatSituation(who, unit)) ~= nil then return true end
+  end
+  return false
+end
+
+-- Is this mob fighting you? Threat first; if that's unavailable, whether
+-- it's in combat and targeting you or your pet.
+local function IsEngaged(unit)
+  if OnThreatTable(unit) then return true end
+  if UnitAffectingCombat and Plain(UnitAffectingCombat(unit)) and UnitIsUnit then
+    local t = unit .. "target"
+    return UnitExists(t) and (UnitIsUnit(t, "player") or UnitIsUnit(t, "pet")) or false
+  end
+  return false
+end
+
+-- A mob you were fighting died.
+local function OnDeath(guid)
+  if died[guid] or counted[guid] then return end
+  if not IsSolo() or tapDenied[guid] or not engaged[guid] or not NpcIDFromGUID(guid) then return end
+  died[guid] = true
   if CanLootUnit and C_Timer then
     -- Count the kill now only if the corpse is empty. A corpse with loot
     -- counts when you loot it, so corpses you skip don't drag rates down.
     C_Timer.After(1.5, function()
-      local hasLoot = CanLootUnit(destGUID)
-      if not hasLoot and not looted[destGUID] then CountKill(destGUID) end
+      local hasLoot = Plain(CanLootUnit(guid))
+      if hasLoot == false and not looted[guid] then CountKill(guid) end
     end)
   else
     -- No way to tell empty corpses from skipped ones: assume you loot everything.
-    CountKill(destGUID)
+    CountKill(guid)
   end
+end
+
+local function NoteUnit(unit)
+  if not unit or not UnitExists(unit) then return end
+  local guid = Plain(UnitGUID(unit))
+  if not guid or not NpcIDFromGUID(guid) then return end
+  names[guid] = Plain(UnitName(unit)) or names[guid]
+  if UnitIsDead(unit) then
+    OnDeath(guid)
+    return
+  end
+  if UnitIsTapDenied and Plain(UnitIsTapDenied(unit)) then
+    tapDenied[guid] = true
+  elseif IsEngaged(unit) then
+    engaged[guid] = true
+  end
+end
+
+local GetCombatLogInfo = CombatLogGetCurrentEventInfo or (C_CombatLog and C_CombatLog.GetCurrentEventInfo)
+
+local function OnCombatLog()
+  local ok, _, subevent, _, sourceGUID, _, _, _, destGUID, destName = pcall(GetCombatLogInfo)
+  if not ok or Plain(subevent) ~= "PARTY_KILL" then return end
+  sourceGUID, destGUID, destName = Plain(sourceGUID), Plain(destGUID), Plain(destName)
+  if not destGUID or not NpcIDFromGUID(destGUID) then return end
+  if destName then names[destGUID] = destName end
+  if sourceGUID ~= UnitGUID("player") and sourceGUID ~= UnitGUID("pet") then return end
+  engaged[destGUID] = true -- your killing blow
+  OnDeath(destGUID)
 end
 
 local function OnLootOpened()
@@ -139,9 +191,13 @@ end
 
 -- Game functions recording can't work without.
 local REQUIRED = {
-  "CombatLogGetCurrentEventInfo", "GetNumLootItems", "GetLootSourceInfo",
-  "GetLootSlotType", "GetLootSlotLink", "GetLootSlotInfo",
+  "GetNumLootItems", "GetLootSourceInfo", "GetLootSlotType", "GetLootSlotLink", "GetLootSlotInfo",
 }
+
+local function IsMobToken(unit)
+  return unit == "target" or unit == "focus" or unit == "mouseover"
+    or (type(unit) == "string" and unit:find("^nameplate%d+$") ~= nil)
+end
 
 function Recorder:Init()
   local missing = {}
@@ -161,13 +217,18 @@ function Recorder:Init()
   end
 
   local f = CreateFrame("Frame")
-  f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-  f:RegisterEvent("LOOT_OPENED")
-  f:RegisterEvent("PLAYER_TARGET_CHANGED")
-  f:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
-  f:RegisterEvent("NAME_PLATE_UNIT_ADDED")
-  f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-  f:RegisterEvent("PLAYER_REGEN_ENABLED")
+  -- Register one at a time: an event this client doesn't have is an error.
+  local function Register(event) return pcall(f.RegisterEvent, f, event) end
+  for _, event in ipairs({
+    "LOOT_OPENED", "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "PLAYER_FOCUS_CHANGED",
+    "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_HEALTH", "UNIT_FLAGS",
+    "UNIT_THREAT_LIST_UPDATE", "UNIT_SPELLCAST_SUCCEEDED", "PLAYER_REGEN_ENABLED",
+  }) do Register(event) end
+  ns.killMethod = "threat tracking"
+  if GetCombatLogInfo and Register("COMBAT_LOG_EVENT_UNFILTERED") then
+    ns.killMethod = "threat tracking + combat log"
+  end
+
   f:SetScript("OnEvent", function(_, event, ...)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
       OnCombatLog()
@@ -177,8 +238,12 @@ function Recorder:Init()
       NoteUnit("target")
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
       NoteUnit("mouseover")
-    elseif event == "NAME_PLATE_UNIT_ADDED" then
-      NoteUnit((...))
+    elseif event == "PLAYER_FOCUS_CHANGED" then
+      NoteUnit("focus")
+    elseif event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED"
+        or event == "UNIT_HEALTH" or event == "UNIT_FLAGS" or event == "UNIT_THREAT_LIST_UPDATE" then
+      local unit = ...
+      if IsMobToken(unit) then NoteUnit(unit) end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
       local unit, _, spellID = ...
       if unit == "player" and spellID then
@@ -186,11 +251,16 @@ function Recorder:Init()
         if name and gatherSpells[name] then lastGatherAt = GetTime() end
       end
     elseif event == "PLAYER_REGEN_ENABLED" then
-      -- Out of combat: forget tap state, and keep the dedupe tables small.
-      wipe(tapDenied)
+      -- Out of combat: keep the tracking tables small. Tap and engagement
+      -- state is kept until then because corpses are often checked after.
       local n = 0
       for _ in pairs(looted) do n = n + 1 end
-      if n > 2000 then wipe(looted); wipe(counted); wipe(names) end
+      if n > 2000 then wipe(looted); wipe(counted); wipe(names); wipe(died) end
+      C_Timer.After(5, function()
+        if not (UnitAffectingCombat and UnitAffectingCombat("player")) then
+          wipe(tapDenied); wipe(engaged)
+        end
+      end)
     end
   end)
 end
