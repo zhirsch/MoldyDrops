@@ -45,7 +45,13 @@ local function Fire(event, ...)
 end
 GameTooltip = CreateFrame()
 local spellNames = { [8613] = "Skinning", [2575] = "Mining", [2366] = "Herb Gathering", [921] = "Pick Pocket" }
-function GetSpellInfo(id) return spellNames[id] end
+-- WoW Forever has the namespaced API only: no GetSpellInfo or GetItemInfo globals.
+GetSpellInfo = nil
+GetItemInfo = nil
+C_Spell = { GetSpellName = function(id) return spellNames[id] end }
+C_Item = { GetItemInfo = function() return nil end }
+local errors = {}
+function geterrorhandler() return function(e) errors[#errors + 1] = tostring(e) end end
 function IsInInstance() return false end
 local grouped = false
 function IsInGroup() return grouped end
@@ -81,6 +87,7 @@ for _, file in ipairs({ "BaseData", "Core", "Codec", "Recorder", "Tooltip", "Sea
   chunk("MoldyDrops", ns)
 end
 Fire("ADDON_LOADED", "MoldyDrops")
+check("no errors during startup", #errors == 0, errors[1])
 check("db initialised", MoldyDropsDB and #MoldyDropsDB.clientId == 16, MoldyDropsDB and MoldyDropsDB.clientId)
 check("base data loaded (grey row first)", ns.base[6] and ns.base[6][1] == 0 and ns.baseGrey[6][1] == 755 and ns.mobs[6][1] == "Kobold Vermin")
 

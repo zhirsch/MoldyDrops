@@ -51,11 +51,23 @@ function ns.ItemInfo(itemID)
   if seen then return seen[1], seen[2] end
   local base = ns.items and ns.items[itemID]
   if base then return base[1], base[2] end
-  if GetItemInfo then
-    local name, _, quality = GetItemInfo(itemID)
-    if name then return name, quality end
-  end
+  local name, quality = ns.ClientItemInfo(itemID)
+  if name then return name, quality end
   return "item:" .. itemID, 1
+end
+
+-- WoW Forever uses the newer namespaced API (C_Spell, C_Item) and drops some
+-- old globals, so look functions up in both places.
+function ns.SpellName(spellID)
+  if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(spellID) end
+  if GetSpellInfo then return (GetSpellInfo(spellID)) end
+end
+
+function ns.ClientItemInfo(itemID)
+  local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+  if not getInfo then return nil end
+  local name, _, quality = getInfo(itemID)
+  return name, quality
 end
 
 -- Mob name and level range (levels only known for bundled 1.12 mobs).
@@ -70,10 +82,13 @@ local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:SetScript("OnEvent", function(self, _, name)
   if name ~= ADDON then return end
-  InitDB()
-  if ns.Recorder then ns.Recorder:Init() end
-  if ns.Tooltip then ns.Tooltip:Init() end
   self:UnregisterEvent("ADDON_LOADED")
+  InitDB()
+  -- Start each part on its own, so an error in one (still reported through
+  -- the normal error handler) doesn't stop the others.
+  for _, part in ipairs({ ns.Tooltip, ns.Recorder }) do
+    xpcall(function() part:Init() end, geterrorhandler())
+  end
 end)
 
 -- Returns mobs, total kills, mobs with at least MIN_SAMPLE kills, distinct items.
@@ -119,8 +134,10 @@ local function PrintStats()
   end
 
   print(("  Names known in game: %s%d|r mobs, %s%d|r items"):format(W, Count(db.mobs), W, Count(db.items)))
-  print(("  Tooltip: %s, %s; recording only while solo"):format(
-    db.settings.enabled and "on" or "off", db.settings.openWorldOnly and "open world only" or "everywhere"))
+  print(("  Tooltip: %s, %s; %s"):format(
+    db.settings.enabled and "on" or "off", db.settings.openWorldOnly and "open world only" or "everywhere",
+    ns.recordingDisabled and ("|cffff4040recording off (missing " .. ns.recordingDisabled .. ")|r")
+      or "recording only while solo"))
 end
 
 local HELP = {

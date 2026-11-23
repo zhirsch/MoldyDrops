@@ -11,6 +11,8 @@ while ($listener.IsListening) {
   if ((Test-Path $path -PathType Leaf) -and ([IO.Path]::GetFullPath($path).StartsWith([IO.Path]::GetFullPath($Root)))) {
     $bytes = [IO.File]::ReadAllBytes($path)
     $ctx.Response.ContentType = 'text/html; charset=utf-8'
+    $ctx.Response.ContentLength64 = $bytes.Length
+    $ctx.Response.Headers.Add('Cache-Control', 'no-store')
     $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
   } else {
     $ctx.Response.StatusCode = 404

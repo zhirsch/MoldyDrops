@@ -137,9 +137,26 @@ local function OnLootOpened()
   end
 end
 
+-- Game functions recording can't work without.
+local REQUIRED = {
+  "CombatLogGetCurrentEventInfo", "GetNumLootItems", "GetLootSourceInfo",
+  "GetLootSlotType", "GetLootSlotLink", "GetLootSlotInfo",
+}
+
 function Recorder:Init()
+  local missing = {}
+  for _, fn in ipairs(REQUIRED) do
+    if type(_G[fn]) ~= "function" then missing[#missing + 1] = fn end
+  end
+  if #missing > 0 then
+    ns.recordingDisabled = table.concat(missing, ", ")
+    ns.Print("loot recording is off: this game client has no " .. ns.recordingDisabled ..
+      ". The tooltip and search still work.")
+    return
+  end
+
   for _, id in ipairs({ 8613, 2575, 2366, 921 }) do -- Skinning, Mining, Herb Gathering, Pick Pocket
-    local name = GetSpellInfo(id)
+    local name = ns.SpellName(id)
     if name then gatherSpells[name] = true end
   end
 
@@ -165,7 +182,7 @@ function Recorder:Init()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
       local unit, _, spellID = ...
       if unit == "player" and spellID then
-        local name = GetSpellInfo(spellID)
+        local name = ns.SpellName(spellID)
         if name and gatherSpells[name] then lastGatherAt = GetTime() end
       end
     elseif event == "PLAYER_REGEN_ENABLED" then
