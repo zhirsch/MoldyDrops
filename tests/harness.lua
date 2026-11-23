@@ -27,9 +27,18 @@ tinsert = table.insert
 UISpecialFrames = {}
 SlashCmdList = {}
 local frames = {}
-local frameMT = { __index = function() return function() end end }
+-- Any method you call on a stub returns another stub, so UI-building code
+-- (CreateFontString():SetPoint() and so on) runs without a real client.
+local stubMT = {}
+local function Stub() return setmetatable({}, stubMT) end
+-- Only capitalized keys (WoW methods) are invented; data fields stay nil.
+stubMT.__index = function(_, k)
+  if type(k) == "string" and k:find("^%u") then return function() return Stub() end end
+end
+UIParent = Stub()
+ChatFontNormal = Stub()
 function CreateFrame()
-  local f = setmetatable({}, frameMT)
+  local f = Stub()
   f.events = {}
   f.RegisterEvent = function(self, e) self.events[e] = true end
   f.UnregisterEvent = function(self, e) self.events[e] = nil end
@@ -85,8 +94,8 @@ function GetAddOnMetadata() return "0.1.0" end
 
 -- ---------- load addon ----------
 local ns = {}
-for _, file in ipairs({ "BaseData", "Core", "Codec", "Recorder", "Tooltip", "Search" }) do
-  local chunk, err = load(SRC[file], "@" .. file .. ".lua")
+for file in tostring(SRC.FILES):gmatch("[^\n]+") do
+  local chunk, err = load(SRC[file], "@" .. file)
   if not chunk then error(err) end
   chunk("MoldyDrops", ns)
 end
@@ -250,6 +259,48 @@ rows, greys, note = ns.Tooltip.Choose(274300)
 check("community for Forever mob", note == "community, 30 kills" and rows[1][2] == 30, note)
 check("garbage rejected", ns.Codec.ParseSnapshot("hello") == nil)
 check("damaged rejected", ns.Codec.ParseSnapshot("!MD1!@@@@") == nil)
+
+-- reverse search (item -> mobs)
+ns.BuildDropIndex()
+local items = ns.SearchItems("melted candle")
+check("rsearch finds item, exact first", items[1] and items[1].id == 755 and items[1].rank == 0 and items[1].mobCount > 1,
+  items[1] and (items[1].id .. " " .. items[1].mobCount))
+local mobs = ns.MobsDropping(755)
+local sorted, vermin = true, nil
+for i, m in ipairs(mobs) do
+  if i > 1 and m.pct > mobs[i - 1].pct then sorted = false end
+  if m.id == 6 then vermin = m end
+end
+check("rsearch mobs sorted by chance", sorted and #mobs > 1, #mobs)
+check("rsearch uses tooltip numbers (community 30% for Kobold Vermin)", vermin and near(vermin.pct, 30) and vermin.name == "Kobold Vermin",
+  vermin and vermin.pct)
+check("rsearch never lists the grey pseudo item", #ns.MobsDropping(ns.GREY) == 0)
+items = ns.SearchItems("FROSTED")
+check("rsearch finds Forever item from recordings", items[1] and items[1].id == 99999, items[1] and items[1].name)
+mobs = ns.MobsDropping(99999)
+check("rsearch Forever item's mob", mobs[1] and mobs[1].id == 274300 and mobs[1].name == "Coldrasp" and near(mobs[1].pct, 30),
+  mobs[1] and (mobs[1].name .. " " .. mobs[1].pct))
+check("rsearch empty query", #ns.SearchItems("  ") == 0)
+local base = ns.MobsDropping(5465) -- Small Spider Leg, base data only
+check("rsearch base-only item", base[1] ~= nil and base[1].note:find("1.12 estimate", 1, true) ~= nil, base[1] and base[1].note)
+
+-- the windows build and fill without errors (stub frames)
+local function ok(name, fn)
+  local success, err = pcall(fn)
+  check(name, success, err)
+end
+ok("search window opens", function() ns.ShowSearch("kobold") end)
+ok("search window selects a given mob", function() ns.ShowSearch("kobold", 6) end)
+shift = true
+ok("search window redraws with Shift", function() ns.RefreshSearch() end)
+shift = false
+ok("item window opens", function() ns.ShowItemSearch("candle") end)
+ok("item window selects a given item", function() ns.ShowItemSearch("melted candle", 755) end)
+ok("export window opens", function() ns.ShowExport() end)
+ok("import window opens", function() ns.ShowImport() end)
+ok("slash commands", function()
+  for _, cmd in ipairs({ "", "search vermin", "rsearch candle", "stats", "help" }) do SlashCmdList.MOLDYDROPS(cmd) end
+end)
 
 log(("%d failures"):format(fails))
 return table.concat(out, "\n")

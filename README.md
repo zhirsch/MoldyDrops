@@ -11,12 +11,15 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | Command | What it does |
 |---|---|
 | `/drops search <mob name>` | Opens a window that finds mobs by name and shows their drops |
+| `/drops rsearch <item name>` | Opens a window that finds items by name and lists the mobs that drop them, highest chance first |
 | `/drops export` | Opens a window with your recorded loot as a string to upload |
 | `/drops import` | Opens a window to paste community data from the website |
 | `/drops stats` | Prints the state of the database |
 | `/drops tooltip` | Turns the tooltip on or off |
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
 | `/drops reset` | Deletes the loot you've recorded |
+
+In either search window, click a drop to see every mob that drops it, or click a mob to see its drops. `rsearch` only knows each mob's top 10 drops from the bundled 1.12 data (plus everything recorded or imported), so very rare world drops may be missing.
 
 All grey (poor quality) items share one "Grey items" row. Hold **Shift** to list them individually, in the tooltip or the search window.
 

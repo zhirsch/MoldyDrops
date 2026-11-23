@@ -11,4 +11,6 @@ Codec.lua
 Recorder.lua
 Tooltip.lua
 ExportUI.lua
+SearchWindow.lua
 Search.lua
+ReverseSearch.lua
