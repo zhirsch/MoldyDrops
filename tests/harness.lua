@@ -399,7 +399,7 @@ check("damaged rejected", ns.Codec.ParseSnapshot("!MD1!@@@@") == nil)
 -- reverse search (item -> mobs)
 ns.BuildDropIndex()
 local items = ns.SearchItems("melted candle")
-check("rsearch finds item, exact first", items[1] and items[1].id == 755 and items[1].rank == 0 and items[1].mobCount > 1,
+check("item search finds item, exact first", items[1] and items[1].id == 755 and items[1].rank == 0 and items[1].mobCount > 1,
   items[1] and (items[1].id .. " " .. items[1].mobCount))
 local mobs = ns.MobsDropping(755)
 local sorted, vermin = true, nil
@@ -407,20 +407,20 @@ for i, m in ipairs(mobs) do
   if i > 1 and m.pct > mobs[i - 1].pct then sorted = false end
   if m.id == 6 then vermin = m end
 end
-check("rsearch mobs sorted by chance", sorted and #mobs > 1, #mobs)
-check("rsearch uses tooltip numbers (community 30% for Kobold Vermin)", vermin and near(vermin.pct, 30) and vermin.name == "Kobold Vermin",
+check("item search mobs sorted by chance", sorted and #mobs > 1, #mobs)
+check("item search uses tooltip numbers (community 30% for Kobold Vermin)", vermin and near(vermin.pct, 30) and vermin.name == "Kobold Vermin",
   vermin and vermin.pct)
-check("rsearch never lists the grey pseudo item", #ns.MobsDropping(ns.GREY) == 0)
+check("item search never lists the grey pseudo item", #ns.MobsDropping(ns.GREY) == 0)
 items = ns.SearchItems("FROSTED")
-check("rsearch finds Forever item from recordings", items[1] and items[1].id == 99999, items[1] and items[1].name)
+check("item search finds Forever item from recordings", items[1] and items[1].id == 99999, items[1] and items[1].name)
 mobs = ns.MobsDropping(99999)
-check("rsearch Forever item's mob", mobs[1] and mobs[1].id == 274300 and mobs[1].name == "Coldrasp" and near(mobs[1].pct, 30),
+check("item search Forever item's mob", mobs[1] and mobs[1].id == 274300 and mobs[1].name == "Coldrasp" and near(mobs[1].pct, 30),
   mobs[1] and (mobs[1].name .. " " .. mobs[1].pct))
-check("rsearch empty query", #ns.SearchItems("  ") == 0)
+check("item search empty query", #ns.SearchItems("  ") == 0)
 local base = ns.MobsDropping(5465) -- Small Spider Leg, base data only
-check("rsearch base-only item", base[1] ~= nil and base[1].note:find("1.12 estimate", 1, true) ~= nil, base[1] and base[1].note)
+check("item search base-only item", base[1] ~= nil and base[1].note:find("1.12 estimate", 1, true) ~= nil, base[1] and base[1].note)
 
--- gathering in snapshots and rsearch
+-- gathering in snapshots and item search
 check("snapshot S parsed, bad kind ignored", MoldyDropsDB.community.gather[113] and MoldyDropsDB.community.gather[113].kind == 1
   and MoldyDropsDB.community.gather[113][0] == 25 and MoldyDropsDB.community.gather[5] == nil)
 gk, grows, gnote = ns.Tooltip.Gather(113)
@@ -442,30 +442,30 @@ check("community pick pocket preferred at 20+", pnote == "community, 25 mobs" an
 ns.BuildDropIndex()
 local fromPick
 for _, m in ipairs(ns.MobsDropping(5363)) do if m.id == 38 and m.gather == ns.PICKPOCKET then fromPick = m end end
-check("rsearch includes pick pocketing for rogues", fromPick and fromPick.pct == 40)
+check("item search includes pick pocketing for rogues", fromPick and fromPick.pct == 40)
 playerClass = "WARRIOR"
 ns.BuildDropIndex()
 local leather = ns.MobsDropping(2318)
 local boar
 for _, m in ipairs(leather) do if m.id == 113 and m.gather == 1 then boar = m end end
-check("rsearch lists skinnable mobs with their profession", boar and boar.pct == 80, boar and boar.pct)
+check("item search lists skinnable mobs with their profession", boar and boar.pct == 80, boar and boar.pct)
 ns.BuildDropIndex()
 local scraps = ns.SearchItems("ruined leather scraps")
 local fromSkin = 0
 for _, m in ipairs(ns.MobsDropping(scraps[1] and scraps[1].id or -1)) do if m.gather == 1 then fromSkin = fromSkin + 1 end end
-check("rsearch: many mobs skinnable for Ruined Leather Scraps", fromSkin > 50, fromSkin)
+check("item search: many mobs skinnable for Ruined Leather Scraps", fromSkin > 50, fromSkin)
 
--- container contents in rsearch: Murloc Coastrunner (126) drops Small Barnacled Clam (5523, 33.1%)
+-- container contents in item search: Murloc Coastrunner (126) drops Small Barnacled Clam (5523, 33.1%)
 ns.BuildDropIndex()
 local function viaClam(itemID)
   for _, m in ipairs(ns.MobsDropping(itemID)) do if m.id == 126 and m.via == 5523 then return m end end
 end
 local meat = viaClam(5503)
-check("rsearch: Clam Meat via clam", meat and near(meat.pct, 33.1), meat and meat.pct)
+check("item search: Clam Meat via clam", meat and near(meat.pct, 33.1), meat and meat.pct)
 local pearl = viaClam(5498)
-check("rsearch: pearl chance = clam chance x pearl chance", pearl and near(pearl.pct, 33.1 * 0.05), pearl and pearl.pct)
+check("item search: pearl chance = clam chance x pearl chance", pearl and near(pearl.pct, 33.1 * 0.05), pearl and pearl.pct)
 local pearls = ns.SearchItems("small lustrous pearl")
-check("rsearch finds container-only items", pearls[1] and pearls[1].id == 5498 and pearls[1].mobCount > 1, pearls[1] and pearls[1].mobCount)
+check("item search finds container-only items", pearls[1] and pearls[1].id == 5498 and pearls[1].mobCount > 1, pearls[1] and pearls[1].mobCount)
 
 -- Ctrl+click jumps; a plain click doesn't
 ns.ShowItemSearch("small lustrous pearl", 5498)
@@ -534,6 +534,18 @@ check("tooltip adds loot for a hostile mob", hover(6, false) > 3)
 check("tooltip adds nothing for a friendly guard (Orgrimmar Grunt)", hover(3296, true) == 0)
 check("tooltip shows enemy-faction guards (attackable)", hover(3296, false) > 0)
 
+-- /drops item opens the item search; the old name is gone
+local iw = FrameNamed("MoldyDropsItemSearchFrame")
+iw:Hide(); FrameNamed("MoldyDropsSearchFrame"):Hide()
+SlashCmdList.MOLDYDROPS("rsearch candle")
+check("old /drops rsearch no longer opens the item window", not iw.shown)
+SlashCmdList.MOLDYDROPS("item candle")
+check("/drops item opens the item window", iw.shown)
+iw:Hide()
+SlashCmdList.MOLDYDROPS("i candle")
+check("/drops i is a short form", iw.shown)
+iw:Hide()
+
 -- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
 local sw = tostring(SRC["SearchWindow.lua"])
 check("list and detail rows don't wrap", sw:find("b.text:SetWordWrap(false)", 1, true) ~= nil
@@ -554,7 +566,7 @@ ok("item window selects a given item", function() ns.ShowItemSearch("melted cand
 ok("export window opens", function() ns.ShowExport() end)
 ok("import window opens", function() ns.ShowImport() end)
 ok("slash commands", function()
-  for _, cmd in ipairs({ "", "search vermin", "rsearch candle", "stats", "help" }) do SlashCmdList.MOLDYDROPS(cmd) end
+  for _, cmd in ipairs({ "", "search vermin", "item candle", "i candle", "stats", "help" }) do SlashCmdList.MOLDYDROPS(cmd) end
 end)
 
 log(("%d failures"):format(fails))

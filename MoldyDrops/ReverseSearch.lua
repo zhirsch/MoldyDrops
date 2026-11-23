@@ -1,6 +1,6 @@
 local _, ns = ...
 
--- /drops rsearch <item name>: matching items on the left, every mob known to
+-- /drops item <item name>: matching items on the left, every mob known to
 -- give the selected item on the right (drops, gathering, pick pocketing for
 -- rogues, and inside containers they drop), highest chance first.
 --

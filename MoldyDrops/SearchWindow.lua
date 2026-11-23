@@ -2,7 +2,7 @@ local _, ns = ...
 
 -- A search window with a search box, a list of matches on the left, and
 -- details for the selected match on the right. Used by /drops search (mobs)
--- and /drops rsearch (items).
+-- and /drops item (items).
 --
 -- spec fields:
 --   name, title          global frame name and window title
@@ -257,7 +257,7 @@ function ns.CreateSearchWindow(spec)
         end
       end)
       row:SetScript("OnLeave", function() GameTooltip:Hide() end)
-      -- Ctrl+click jumps to the other search (item -> rsearch, mob -> search).
+      -- Ctrl+click jumps to the other search (item -> /drops item, mob -> /drops search).
       row:SetScript("OnClick", function(self)
         if spec.onRowClick and self.data ~= nil and IsControlKeyDown() then spec.onRowClick(self.data) end
       end)

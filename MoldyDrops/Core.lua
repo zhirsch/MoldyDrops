@@ -160,7 +160,7 @@ end
 
 local HELP = {
   "|cffffffff/drops search <mob name>|r - find a mob and show its drops",
-  "|cffffffff/drops rsearch <item name>|r - find an item and show the mobs that drop it",
+  "|cffffffff/drops item <item name>|r - find an item and show the mobs that drop it",
   "|cffffffff/drops export|r - copy your recorded loot to upload to the website",
   "|cffffffff/drops import|r - paste community data from the website",
   "|cffffffff/drops stats|r - show the state of the database",
@@ -177,7 +177,7 @@ SlashCmdList.MOLDYDROPS = function(msg)
   cmd = cmd:lower()
   if cmd == "search" or cmd == "s" then
     ns.ShowSearch(rest)
-  elseif cmd == "rsearch" or cmd == "rs" then
+  elseif cmd == "item" or cmd == "i" then
     ns.ShowItemSearch(rest)
   elseif cmd == "export" then
     ns.ShowExport()
