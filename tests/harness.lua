@@ -209,6 +209,18 @@ local function checkPlacement(npcID, expand, label)
 end
 local drake, at = checkPlacement(7044, false, "Black Drake (71%) goes first")
 check("Black Drake: No items is the first row", at == 1 and drake[#drake][1]:find("Gold", 1, true), at)
+-- chances are colored like the item's rarity; grey row and No items are grey
+local function rightOf(rows, text)
+  for _, r in ipairs(rows) do if r[1]:find(text, 1, true) then return r[2] end end
+end
+local GREYHEX, WHITE, GREEN = "|cff9d9d9d", "|cffffffff", "|cff1eff00"
+check("green item's chance is green", (rightOf(drake, "Star Ruby") or ""):sub(1, 10) == GREEN, rightOf(drake, "Star Ruby"))
+check("white item's chance is white", (rightOf(drake, "Wicked Claw") or ""):sub(1, 10) == WHITE, rightOf(drake, "Wicked Claw"))
+check("Grey items chance is grey", (rightOf(drake, "Grey items") or ""):sub(1, 10) == GREYHEX, rightOf(drake, "Grey items"))
+check("No items chance is grey", (rightOf(drake, "No items") or ""):sub(1, 10) == GREYHEX, rightOf(drake, "No items"))
+local expanded = ns.Tooltip.DropSection(6, 5, true)
+check("individual grey item's chance is grey (Shift)", (rightOf(expanded, "Melted Candle") or ""):sub(1, 10) == GREYHEX,
+  rightOf(expanded, "Melted Candle"))
 checkPlacement(6, false, "Kobold Vermin")
 checkPlacement(6, true, "Kobold Vermin with Shift")
 checkPlacement(113, false, "Stonetusk Boar")

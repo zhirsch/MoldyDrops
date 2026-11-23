@@ -30,7 +30,11 @@ local function FormatPct(p)
   if p >= 0.1 then return ("%.2f%%"):format(p) end
   return "<0.1%"
 end
-ns.QualityHex, ns.FormatPct = QualityHex, FormatPct
+-- A chance colored like the item's rarity (grey for poor items and "No items").
+local function ColoredPct(p, quality)
+  return QualityHex(quality or 1) .. FormatPct(p) .. "|r"
+end
+ns.QualityHex, ns.FormatPct, ns.ColoredPct = QualityHex, FormatPct, ColoredPct
 
 local MAX_GREY_LINES = 8
 
@@ -206,7 +210,7 @@ end
 function Tooltip.ExtraLines(npcID)
   local noItems, gold = Tooltip.Extras(npcID)
   local out = {}
-  if noItems then out[#out + 1] = { "|cff9d9d9dNo items|r", "|cff9d9d9d" .. FormatPct(noItems) .. "|r" } end
+  if noItems then out[#out + 1] = { QualityHex(0) .. "No items|r", ColoredPct(noItems, 0) } end
   if gold then
     local range = gold[1] == gold[2] and ns.FormatMoney(gold[1])
       or (ns.FormatMoney(gold[1]) .. " - " .. ns.FormatMoney(gold[2]))
@@ -269,7 +273,7 @@ function Tooltip.LineText(line, expand)
   local name, quality = ns.ItemInfo(itemID)
   local text = QualityHex(quality or 1) .. name .. "|r"
   if kind == "content" then
-    return "      |cff808080in it:|r " .. text, "|cff9d9d9d" .. FormatPct(pct) .. "|r"
+    return "      |cff808080in it:|r " .. text, ColoredPct(pct, quality)
   elseif kind == "grey" then
     text = "    " .. text
   end
@@ -277,7 +281,7 @@ function Tooltip.LineText(line, expand)
     local hasChildren = (itemID == ns.GREY) or Tooltip.Contents(itemID)
     if hasChildren then text = text .. " |cff808080(Shift)|r" end
   end
-  return text, FormatPct(pct)
+  return text, ColoredPct(pct, quality)
 end
 
 -- The whole Drops section as display rows { left, right, line }: the top
@@ -292,7 +296,7 @@ function Tooltip.DropSection(npcID, maxRows, expand)
   local out = {}
   local placed = noItems == nil
   local function addNoItems()
-    out[#out + 1] = { "|cff9d9d9dNo items|r", "|cff9d9d9d" .. FormatPct(noItems) .. "|r", nil }
+    out[#out + 1] = { QualityHex(0) .. "No items|r", ColoredPct(noItems, 0), nil }
     placed = true
   end
   for _, line in ipairs(lines or {}) do
@@ -336,7 +340,7 @@ local function AddLoot(tooltip, unit)
     tooltip:AddDoubleLine(ns.GATHER_NAMES[kind] or "Gathering", note, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
     for i = 1, math.min(ns.TOP_N, #rows) do
       local name, quality = ns.ItemInfo(rows[i][1])
-      tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r", FormatPct(rows[i][2]), 1, 1, 1, 1, 1, 1)
+      tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r", ColoredPct(rows[i][2], quality), 1, 1, 1, 1, 1, 1)
     end
     added = true
   end

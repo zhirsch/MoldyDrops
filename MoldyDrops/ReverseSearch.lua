@@ -135,7 +135,7 @@ local window = ns.CreateSearchWindow({
       local via = m.via and ("  |cff808080in " .. ns.ItemInfo(m.via) .. "|r") or ""
       lines[i] = {
         m.name .. (level ~= "" and ("  |cff808080" .. level .. "|r") or "") .. how .. via,
-        ns.FormatPct(m.pct),
+        ns.ColoredPct(m.pct, r.quality),
         m,
       }
     end
