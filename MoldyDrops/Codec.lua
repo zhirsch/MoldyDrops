@@ -5,9 +5,10 @@ local _, ns = ...
 --     MD1 U <clientId> <unixTime> <addonVersion> <build>   (upload, addon -> site)
 --     MD1 S <generatedUnixTime> <contributors>             (snapshot, site -> addon)
 --     N <npcID> <kills> <itemID>:<count> ... [G:<corpses with any grey item>]
+--       [E:<corpses with no items>] [$:<corpses with gold>:<total copper>:<min>:<max>]
 --     I <itemID> <quality> <item name>
 --     M <npcID> <mob name>
---     S <npcID> <kind 1-4> <corpses gathered> <itemID>:<count> ...   (skinning/herb/mining/engineering)
+--     S <npcID> <kind 1-5> <corpses gathered> <itemID>:<count> ...   (skinning/herb/mining/engineering/pick pocket)
 local Codec = {}
 ns.Codec = Codec
 
@@ -79,22 +80,25 @@ function Codec.Export(db, addonVersion, build)
         itemsUsed[itemID] = true
       end
       if e[-1] then parts[#parts + 1] = "G:" .. e[-1] end
+      if e[-2] then parts[#parts + 1] = "E:" .. e[-2] end
+      if e[-3] then parts[#parts + 1] = ("$:%d:%d:%d:%d"):format(e[-3], e[-4], e[-5], e[-6]) end
       lines[#lines + 1] = table.concat(parts, " ")
       mobCount = mobCount + 1
     end
   end
   local named = {}
-  local gather = db.ownGather or {}
-  for _, npcID in ipairs(SortedKeys(gather)) do
-    local e = gather[npcID]
-    if (e[0] or 0) > 0 and e.kind then
-      local parts = { "S", npcID, e.kind, e[0] }
-      for _, itemID in ipairs(SortedKeys(e, true)) do
-        parts[#parts + 1] = itemID .. ":" .. e[itemID]
-        itemsUsed[itemID] = true
+  for _, tbl in ipairs({ db.ownGather or {}, db.ownPick or {} }) do
+    for _, npcID in ipairs(SortedKeys(tbl)) do
+      local e = tbl[npcID]
+      if (e[0] or 0) > 0 and e.kind then
+        local parts = { "S", npcID, e.kind, e[0] }
+        for _, itemID in ipairs(SortedKeys(e, true)) do
+          parts[#parts + 1] = itemID .. ":" .. e[itemID]
+          itemsUsed[itemID] = true
+        end
+        lines[#lines + 1] = table.concat(parts, " ")
+        named[npcID] = true
       end
-      lines[#lines + 1] = table.concat(parts, " ")
-      named[npcID] = true
     end
   end
   for _, npcID in ipairs(SortedKeys(db.own)) do
@@ -132,7 +136,7 @@ function Codec.ParseSnapshot(str)
     return nil, "the string is damaged or from an incompatible version"
   end
 
-  local npcs, items, mobs, gather, count = {}, {}, {}, {}, 0
+  local npcs, items, mobs, gather, pick, count = {}, {}, {}, {}, {}, 0
   for line in text:gmatch("[^\n]+") do
     local tag = line:sub(1, 2)
     if tag == "N " then
@@ -140,12 +144,20 @@ function Codec.ParseSnapshot(str)
       npcID, kills = tonumber(npcID), tonumber(kills)
       if npcID and kills and kills > 0 then
         local e = { [0] = kills }
-        for itemID, c in rest:gmatch("(%d+):(%d+)") do
+        -- Item pairs; the $ gold token is removed first so its numbers aren't read as items.
+        for itemID, c in (rest:gsub("%$:[%d:]+", "")):gmatch("(%d+):(%d+)") do
           itemID = tonumber(itemID)
           if itemID > 0 then e[itemID] = math.min(tonumber(c), kills) end
         end
         local grey = rest:match("G:(%d+)")
         if grey then e[-1] = math.min(tonumber(grey), kills) end
+        local empty = rest:match("E:(%d+)")
+        if empty then e[-2] = math.min(tonumber(empty), kills) end
+        local gn, gsum, gmin, gmax = rest:match("%$:(%d+):(%d+):(%d+):(%d+)")
+        gn = tonumber(gn)
+        if gn and gn > 0 then
+          e[-3], e[-4], e[-5], e[-6] = math.min(gn, kills), tonumber(gsum), tonumber(gmin), tonumber(gmax)
+        end
         npcs[npcID] = e
         count = count + 1
       end
@@ -158,19 +170,20 @@ function Codec.ParseSnapshot(str)
     elseif tag == "S " then
       local npcID, gkind, corpses, rest = line:match("^S (%d+) (%d) (%d+)(.*)$")
       npcID, gkind, corpses = tonumber(npcID), tonumber(gkind), tonumber(corpses)
-      if npcID and gkind and gkind >= 1 and gkind <= 4 and corpses and corpses > 0 then
+      if npcID and gkind and gkind >= 1 and gkind <= 5 and corpses and corpses > 0 then
         local e = { kind = gkind, [0] = corpses }
         for itemID, c in rest:gmatch("(%d+):(%d+)") do
           itemID = tonumber(itemID)
           if itemID > 0 then e[itemID] = math.min(tonumber(c), corpses) end
         end
-        gather[npcID] = e
+        if gkind == 5 then pick[npcID] = e else gather[npcID] = e end
       end
     end
   end
   return {
     npcs = npcs,
     gather = gather,
+    pick = pick,
     generated = date and date("%Y-%m-%d", tonumber(generated)) or generated,
     contributors = tonumber(contributors),
   }, items, count, mobs

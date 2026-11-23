@@ -28,7 +28,7 @@ The text is a list of records separated by `\n`. The first record is a header. A
 ### Records
 
 ```
-N <npcID> <kills> <itemID>:<count> <itemID>:<count> ... [G:<greyCount>]
+N <npcID> <kills> <itemID>:<count> <itemID>:<count> ... [G:<greyCount>] [E:<noItemCount>] [$:<goldCount>:<copperSum>:<copperMin>:<copperMax>]
 I <itemID> <quality> <item name to end of line>
 M <npcID> <mob name to end of line>
 S <npcID> <kind> <corpses> <itemID>:<count> <itemID>:<count> ...
@@ -38,14 +38,16 @@ S <npcID> <kind> <corpses> <itemID>:<count> <itemID>:<count> ...
   - `G:<greyCount>` is optional: the number of corpses that held at least one grey (poor-quality) item.
   - The addon shows all grey items as one "Grey items" rate. That can't be worked out from per-item counts, because one corpse can hold several grey items.
   - Item ID 0 is never used in `N` records.
+  - `E:<noItemCount>` is optional: corpses with no items at all. They may still have had gold.
+  - `$:<goldCount>:<copperSum>:<copperMin>:<copperMax>` is optional: how many corpses had gold, their total, and the smallest and largest amounts, in copper. When combining contributors, add `goldCount` and `copperSum`, and take the min of mins and max of maxes.
 - `I`: the item's name and quality (0 = poor … 5 = legendary) as the client saw them. This lets the website name items that are new in WoW Forever.
 - `M`: a mob's name as the client saw it. Uploads include it only for mobs the bundled 1.12 data doesn't know (new in WoW Forever). Snapshots should include every mob that isn't in the bundled data, so `/drops search` can find it.
 
-- `S`: gathering from corpses.
-  - `kind`: 1 = skinning, 2 = herbalism, 3 = mining, 4 = engineering.
-  - `corpses`: how many corpses were gathered.
-  - `count`: how many of those corpses gave at least one of the item, so `count <= corpses`.
-  - Gathering is recorded even in a group, because what you gather is yours alone.
+- `S`: gathering from corpses, or pick pocketing.
+  - `kind`: 1 = skinning, 2 = herbalism, 3 = mining, 4 = engineering, 5 = pick pocketing.
+  - `corpses`: how many corpses were gathered, or how many mobs were pick pocketed.
+  - `count`: how many of those gave at least one of the item, so `count <= corpses`.
+  - These are recorded even in a group, because what you gather or steal is yours alone.
 
 Upload counts are **cumulative totals for that install**, not the change since the last upload. The website keeps only the latest upload per `clientId`, so uploading twice never double-counts.
 

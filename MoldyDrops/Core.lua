@@ -18,8 +18,15 @@ function ns.Print(msg) print(ns.PREFIX .. msg) end
 --   MoldyDropsDB.ownGather[npcID]  { kind = 1 skin/2 herb/3 mine/4 engineer, [0] = corpses
 --                                    gathered, [itemID] = corpses that gave it }
 --   MoldyDropsDB.community.gather  same shape as ownGather, from the website
+--   MoldyDropsDB.ownPick[npcID]    { kind = 5, [0] = mobs pick pocketed, [itemID] = times it gave it }
+--   MoldyDropsDB.community.pick    same shape as ownPick, from the website
 
-ns.GATHER_NAMES = { "Skinning", "Herbalism", "Mining", "Engineering" }
+ns.GATHER_NAMES = { "Skinning", "Herbalism", "Mining", "Engineering", "Pick Pocket" }
+ns.PICKPOCKET = 5
+
+function ns.IsRogue()
+  return UnitClass and select(2, UnitClass("player")) == "ROGUE"
+end
 local function NewClientId()
   local chars = "0123456789abcdefghijklmnopqrstuvwxyz"
   local t = {}
@@ -38,8 +45,10 @@ local function InitDB()
   if db.settings.openWorldOnly == nil then db.settings.openWorldOnly = true end
   db.own = db.own or {}
   db.ownGather = db.ownGather or {}
+  db.ownPick = db.ownPick or {}
   db.community = db.community or { npcs = {} }
   db.community.gather = db.community.gather or {}
+  db.community.pick = db.community.pick or {}
   db.items = db.items or {}
   db.mobs = db.mobs or {}
   if not db.clientId then

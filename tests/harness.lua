@@ -83,7 +83,9 @@ function UnitAffectingCombat(u) return units[u] and units[u].combat end
 function UnitIsUnit(a, b) return UnitGUID(a) ~= nil and UnitGUID(a) == UnitGUID(b) end
 local loot = {}
 function GetNumLootItems() return #loot end
-function GetLootSourceInfo(slot) return loot[slot].guid, 1 end
+function GetLootSourceInfo(slot) return loot[slot].guid, loot[slot].copper or 1 end
+local playerClass = "WARRIOR"
+function UnitClass() return "Class", playerClass end
 function GetLootSlotType(slot) return loot[slot].money and 2 or 1 end
 function GetLootSlotLink(slot) return loot[slot].item and ("|cffffffff|Hitem:" .. loot[slot].item .. "::::::::|h[x]|h|r") end
 function GetLootSlotInfo(slot) return nil, loot[slot].name, 1, nil, loot[slot].q end
@@ -129,7 +131,7 @@ end
 -- 1: killed and looted (candle + money)
 local g1 = guid(6, 1)
 Kill(g1, true)
-Loot({ { guid = g1, item = 755, name = "Melted Candle", q = 0 }, { guid = g1, money = true } })
+Loot({ { guid = g1, item = 755, name = "Melted Candle", q = 0 }, { guid = g1, money = true, copper = 150 } })
 -- 2: empty corpse
 Kill(guid(6, 2), false)
 -- 3: has loot but walked past
@@ -171,6 +173,33 @@ check("skinning ignored", own and own[2318] == nil)
 check("item name stored", MoldyDropsDB.items[755] and MoldyDropsDB.items[755][1] == "Melted Candle")
 
 check("grey corpses counted", own and own[-1] == 2, own and own[-1])
+check("empty corpse counted as no items", own and own[-2] == 1, own and own[-2])
+check("gold recorded", own and own[-3] == 1 and own[-4] == 150 and own[-5] == 150 and own[-6] == 150)
+local pp = MoldyDropsDB.ownPick[6]
+check("pick pocket recorded", pp and pp.kind == 5 and pp[0] == 1 and pp[159] == 1)
+
+-- no items + gold lines (1.12 data while the sample is small)
+local noItems, gold = ns.Tooltip.Extras(6)
+check("base no-items chance", noItems and near(noItems, 51.3), noItems)
+check("base gold range", gold and gold[1] == 1 and gold[2] == 4 and gold[3] == 2.5)
+local xl = ns.Tooltip.ExtraLines(6)
+check("No items and Gold lines", #xl == 2 and xl[1][1]:find("No items", 1, true) and xl[2][1]:find("1c", 1, true)
+  and xl[2][1]:find("4c", 1, true) and xl[2][2]:find("avg", 1, true), xl[2] and xl[2][1])
+noItems, gold = ns.Tooltip.Extras(113) -- Stonetusk Boar: beasts drop no gold
+check("no gold line for beasts", noItems ~= nil and gold == nil and #ns.Tooltip.ExtraLines(113) == 1)
+check("money formatting", ns.FormatMoney(12345):find("1g", 1, true) and ns.FormatMoney(12345):find("23s", 1, true)
+  and ns.FormatMoney(12345):find("45c", 1, true) and ns.FormatMoney(200) == "|cffc7c7cf2s|r", ns.FormatMoney(200))
+check("0% formats as 0%", ns.FormatPct(0) == "0%")
+
+-- pick pocket section only for rogues
+local function hasPick(npcID)
+  for _, s in ipairs(ns.Tooltip.Sections(npcID)) do if s[1] == ns.PICKPOCKET then return s end end
+end
+check("no pick pocket section for a warrior", hasPick(38) == nil)
+playerClass = "ROGUE"
+local ps = hasPick(38)
+check("pick pocket section for a rogue (1.12 data)", ps and ps[3] == "1.12 estimate" and ps[2][1][1] == 5363, ps and ps[3])
+playerClass = "WARRIOR"
 
 -- gathering
 local sk = MoldyDropsDB.ownGather[6]
@@ -275,9 +304,10 @@ local text = ns.Codec.Base64Decode(str:sub(6))
 log("export text:\n" .. text)
 check("export prefix", str:sub(1, 5) == "!MD1!")
 check("export header", text:match("^MD1 U " .. MoldyDropsDB.clientId .. " 1795400000 0.1.0 16001\n") ~= nil)
-check("export N line with grey count", text:find("\nN 6 3 159:1 755:2 G:2\n", 1, true) ~= nil)
+check("export N line with grey count", text:find("\nN 6 3 159:1 755:2 G:2 E:1 $:1:150:150:150\n", 1, true) ~= nil)
 check("export M line", text:find("\nM 274300 Coldrasp", 1, true) ~= nil)
 check("export S lines", text:find("\nS 6 1 1 2318:1\n", 1, true) ~= nil and text:find("\nS 274400 2 1 88888:1\n", 1, true) ~= nil)
+check("export pick pocket as S kind 5", text:find("\nS 6 5 1 159:1\n", 1, true) ~= nil)
 check("export gathered item names", text:find("\nI 88888 1 Skybloom", 1, true) ~= nil)
 check("export I line", text:find("\nI 755 0 Melted Candle", 1, true) ~= nil)
 check("export mob count", n == 2, n)
@@ -285,7 +315,7 @@ local ok, err = ns.Codec.ParseSnapshot(str)
 check("upload string rejected by import", ok == nil and err:find("upload string") ~= nil, err)
 
 -- snapshot import
-local snapText = "MD1 S 1795400000 7\nN 6 120 755:36 159:8 4536:15 G:40\nN 30 50 1476:25 5465:10\nN 274300 30 99999:9\nI 99999 3 Skyborne Trinket\nM 274300 Coldrasp\nM 274301 Gale Wisp\nS 113 1 25 2318:20 783:5\nS 5 9 10 1:1\nZ future record\n"
+local snapText = "MD1 S 1795400000 7\nN 6 120 755:36 159:8 4536:15 G:40 E:30 $:100:5000:10:90\nN 30 50 1476:25 5465:10\nN 274300 30 99999:9\nI 99999 3 Skyborne Trinket\nM 274300 Coldrasp\nM 274301 Gale Wisp\nS 113 1 25 2318:20 783:5\nS 38 5 25 5363:10\nS 5 9 10 1:1\nZ future record\n"
 local snap = "!MD1!" .. js.global:btoa(snapText)
 local comm, items, count, mobs = ns.Codec.ParseSnapshot("  " .. snap .. "\n")
 check("snapshot parsed", comm and count == 3 and comm.contributors == 7, items)
@@ -336,6 +366,25 @@ check("snapshot S parsed, bad kind ignored", MoldyDropsDB.community.gather[113] 
 gk, grows, gnote = ns.Tooltip.Gather(113)
 check("community skinning preferred at 20+ corpses", gk == 1 and gnote == "community, 25 corpses" and grows[1][1] == 2318 and grows[1][2] == 80,
   tostring(gnote))
+
+-- no items, gold and pick pocketing from the snapshot
+local c6 = MoldyDropsDB.community.npcs[6]
+check("snapshot E and $ parsed, not read as items", c6[-2] == 30 and c6[-3] == 100 and c6[-4] == 5000 and c6[-5] == 10
+  and c6[-6] == 90 and c6[3] == nil and c6[30] == nil and c6[100] == nil)
+noItems, gold = ns.Tooltip.Extras(6)
+check("community no-items and gold", near(noItems, 25) and gold[1] == 10 and gold[2] == 90 and gold[3] == 50,
+  tostring(noItems))
+check("snapshot pick pocket (S kind 5)", MoldyDropsDB.community.pick[38] and MoldyDropsDB.community.pick[38][0] == 25
+  and MoldyDropsDB.community.gather[38] == nil)
+playerClass = "ROGUE"
+local _, prow, pnote = ns.Tooltip.Pick(38)
+check("community pick pocket preferred at 20+", pnote == "community, 25 mobs" and prow[1][1] == 5363 and prow[1][2] == 40, pnote)
+ns.BuildDropIndex()
+local fromPick
+for _, m in ipairs(ns.MobsDropping(5363)) do if m.id == 38 and m.gather == ns.PICKPOCKET then fromPick = m end end
+check("rsearch includes pick pocketing for rogues", fromPick and fromPick.pct == 40)
+playerClass = "WARRIOR"
+ns.BuildDropIndex()
 local leather = ns.MobsDropping(2318)
 local boar
 for _, m in ipairs(leather) do if m.id == 113 and m.gather == 1 then boar = m end end

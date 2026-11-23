@@ -63,15 +63,18 @@ local window = ns.CreateSearchWindow({
     else
       header.source = "No drop data for this mob yet."
     end
+    -- "No items" chance and gold range.
+    for _, x in ipairs(ns.Tooltip.ExtraLines(r.id)) do out[#out + 1] = { x[1], x[2], nil } end
 
-    -- Gathering section, under its own heading.
-    local kind, rows, note = ns.Tooltip.Gather(r.id)
-    if kind and #rows > 0 then
+    -- Gathering and pick pocketing (rogues), each under its own heading.
+    for _, s in ipairs(ns.Tooltip.Sections(r.id)) do
+      local kind, rows, note = s[1], s[2], s[3]
       out[#out + 1] = { " ", nil, nil }
       out[#out + 1] = { "|cffffd100" .. (ns.GATHER_NAMES[kind] or "Gathering") .. "|r  |cff999999" .. note .. "|r", nil, nil }
       for i = 1, math.min(ns.WINDOW_N, #rows) do
         local name, quality = ns.ItemInfo(rows[i][1])
-        out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r", ns.FormatPct(rows[i][2]), { rows[i][1], rows[i][2], "gather" } }
+        out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r", ns.FormatPct(rows[i][2]),
+          { rows[i][1], rows[i][2], kind == ns.PICKPOCKET and "pick" or "gather" } }
       end
     end
     return header, out
@@ -87,6 +90,8 @@ local window = ns.CreateSearchWindow({
         GameTooltip:AddLine("Chance per container opened, from 1.12 data.", 0.6, 0.6, 0.6)
       elseif kind == "gather" then
         GameTooltip:AddLine("Chance per corpse gathered. Click to see every mob that gives it.", 0.6, 0.6, 0.6)
+      elseif kind == "pick" then
+        GameTooltip:AddLine("Chance per mob pick pocketed. Click to see every mob that gives it.", 0.6, 0.6, 0.6)
       else
         GameTooltip:AddLine("Click to see every mob that drops it.", 0.6, 0.6, 0.6)
       end

@@ -17,9 +17,11 @@ local _, ns = ...
 --     PARTY_KILL events are used as well. Turn on enemy nameplates so mobs you
 --     aren't targeting are seen too.
 --   * Each corpse is recorded once (re-opening the loot window is ignored).
---     Pick pocketing is ignored.
 --   * Skinning, herbalism and mining a corpse are recorded separately
---     (ns.db.ownGather), once per corpse, solo or not.
+--     (ns.db.ownGather), once per corpse, solo or not. So is pick
+--     pocketing (ns.db.ownPick), once per mob.
+--   * For each counted kill it also notes whether the corpse had no items
+--     ([-2]) and how much gold it had ([-3] count, [-4] sum, [-5] min, [-6] max).
 local Recorder = {}
 ns.Recorder = Recorder
 
@@ -30,11 +32,11 @@ local names = {}      -- [guid] = unit name, from the combat log or a unit token
 local engaged = {}    -- [guid] = true if you or your pet were on its threat table
 local died = {}       -- [guid] = true once its death has been handled
 local gathered = {}   -- [guid] = true once its gathering loot has been recorded
+local pickpocketed = {} -- [guid] = true once its pick pocket loot has been recorded
 local lastGatherAt = 0
 local lastGatherKind
--- spell name -> gathering kind (1 skinning, 2 herbalism, 3 mining, 4 engineering;
--- 0 = pick pocketing, which is ignored)
-local gatherSpells = { Skinning = 1, ["Herb Gathering"] = 2, Herbalism = 2, Mining = 3 }
+-- spell name -> kind (1 skinning, 2 herbalism, 3 mining, 4 engineering, 5 pick pocket)
+local gatherSpells = { Skinning = 1, ["Herb Gathering"] = 2, Herbalism = 2, Mining = 3, ["Pick Pocket"] = 5 }
 
 local LOOT_SLOT_ITEM = (Enum and Enum.LootSlotType and Enum.LootSlotType.Item) or LOOT_SLOT_ITEM or 1
 
@@ -60,11 +62,16 @@ local function Entry(npcID)
   return e
 end
 
+-- Negative keys in a drop entry, next to [0] = kills and [-1] = grey corpses.
+local NO_ITEMS, GOLD_N, GOLD_SUM, GOLD_MIN, GOLD_MAX = -2, -3, -4, -5, -6
+ns.ENTRY_KEYS = { NO_ITEMS = NO_ITEMS, GOLD_N = GOLD_N, GOLD_SUM = GOLD_SUM, GOLD_MIN = GOLD_MIN, GOLD_MAX = GOLD_MAX }
+
+-- Counts a kill once per corpse; returns true if it was counted just now.
 local function CountKill(guid)
-  if counted[guid] then return end
+  if counted[guid] then return false end
   local npcID = NpcIDFromGUID(guid)
-  if not npcID then return end
-  if ns.db.settings.openWorldOnly and IsInInstance() then return end
+  if not npcID then return false end
+  if ns.db.settings.openWorldOnly and IsInInstance() then return false end
   counted[guid] = true
   local e = Entry(npcID)
   e[0] = e[0] + 1
@@ -73,6 +80,22 @@ local function CountKill(guid)
   if name and not ns.db.mobs[npcID] and not (ns.mobs and ns.mobs[npcID] and ns.mobs[npcID][1] == name) then
     ns.db.mobs[npcID] = { name }
   end
+  return true
+end
+
+-- A counted corpse had no items (it may still have had gold).
+local function NoteNoItems(guid)
+  local e = Entry(NpcIDFromGUID(guid))
+  e[NO_ITEMS] = (e[NO_ITEMS] or 0) + 1
+end
+
+-- A counted corpse had this much copper.
+local function NoteGold(guid, copper)
+  local e = Entry(NpcIDFromGUID(guid))
+  e[GOLD_N] = (e[GOLD_N] or 0) + 1
+  e[GOLD_SUM] = (e[GOLD_SUM] or 0) + copper
+  e[GOLD_MIN] = math.min(e[GOLD_MIN] or copper, copper)
+  e[GOLD_MAX] = math.max(e[GOLD_MAX] or copper, copper)
 end
 
 -- Modern clients can hand addons "secret" values they aren't allowed to read.
@@ -110,7 +133,7 @@ local function OnDeath(guid)
     -- counts when you loot it, so corpses you skip don't drag rates down.
     C_Timer.After(1.5, function()
       local hasLoot = Plain(CanLootUnit(guid))
-      if hasLoot == false and not looted[guid] then CountKill(guid) end
+      if hasLoot == false and not looted[guid] and CountKill(guid) then NoteNoItems(guid) end
     end)
   else
     -- No way to tell empty corpses from skipped ones: assume you loot everything.
@@ -147,19 +170,27 @@ local function OnCombatLog()
   OnDeath(destGUID)
 end
 
--- Reads the open loot window: corpse guid -> { [itemID] = true, [-1] = true
--- if any grey item }, skipping corpses already in `done`.
+local LOOT_SLOT_MONEY = (Enum and Enum.LootSlotType and Enum.LootSlotType.Money) or LOOT_SLOT_MONEY or 2
+
+-- Reads the open loot window, skipping corpses already in `done`. Returns
+--   byCorpse: guid -> { [itemID] = true, [-1] = true if any grey item }
+--   money:    guid -> copper
 local function ReadLoot(done)
-  local byCorpse = {}
+  local byCorpse, money = {}, {}
   local any = false
   for slot = 1, GetNumLootItems() do
+    local slotType = GetLootSlotType(slot)
     local sources = { GetLootSourceInfo(slot) }
     for i = 1, #sources, 2 do
       local guid = sources[i]
       if NpcIDFromGUID(guid) and not done[guid] then
         byCorpse[guid] = byCorpse[guid] or {}
         any = true
-        if GetLootSlotType(slot) == LOOT_SLOT_ITEM then
+        if slotType == LOOT_SLOT_MONEY then
+          -- For coins, the source quantity is the amount in copper.
+          local copper = tonumber(Plain(sources[i + 1]))
+          if copper and copper > 0 then money[guid] = (money[guid] or 0) + copper end
+        elseif slotType == LOOT_SLOT_ITEM then
           local link = GetLootSlotLink(slot)
           local itemID = link and tonumber(link:match("item:(%d+)"))
           if itemID then
@@ -174,25 +205,31 @@ local function ReadLoot(done)
       end
     end
   end
-  return any and byCorpse or nil
+  return any and byCorpse or nil, money
 end
 
--- Skinning, herbalism, mining or engineering on a corpse. Recorded even in a
--- group, since what you gather is yours alone.
-local function RecordGathering(kind)
-  local byCorpse = ReadLoot(gathered)
+-- Skinning, herbalism, mining or engineering a corpse (kind 1-4), or pick
+-- pocketing a mob (kind 5, into db.ownPick). Recorded even in a group, since
+-- what you gather or steal is yours alone.
+local PICKPOCKET = 5
+local function RecordSection(kind, guids)
+  local tbl = kind == PICKPOCKET and ns.db.ownPick or ns.db.ownGather
+  local done = kind == PICKPOCKET and pickpocketed or gathered
+  local byCorpse = ReadLoot(done)
   if not byCorpse then return end
   for guid, items in pairs(byCorpse) do
-    gathered[guid] = true
-    local npcID = NpcIDFromGUID(guid)
-    local e = ns.db.ownGather[npcID]
-    if not e or e.kind ~= kind then
-      e = { kind = kind, [0] = 0 }
-      ns.db.ownGather[npcID] = e
-    end
-    e[0] = e[0] + 1
-    for itemID in pairs(items) do
-      if itemID > 0 then e[itemID] = (e[itemID] or 0) + 1 end
+    if not guids or guids[guid] then
+      done[guid] = true
+      local npcID = NpcIDFromGUID(guid)
+      local e = tbl[npcID]
+      if not e or e.kind ~= kind then
+        e = { kind = kind, [0] = 0 }
+        tbl[npcID] = e
+      end
+      e[0] = e[0] + 1
+      for itemID in pairs(items) do
+        if itemID > 0 then e[itemID] = (e[itemID] or 0) + 1 end
+      end
     end
   end
 end
@@ -200,26 +237,37 @@ end
 local function OnLootOpened()
   if IsFishingLoot and IsFishingLoot() then return end
   if ns.db.settings.openWorldOnly and IsInInstance() then return end
-  if GetTime() - lastGatherAt < 3 then
-    if lastGatherKind and lastGatherKind > 0 then RecordGathering(lastGatherKind) end
+  if GetTime() - lastGatherAt < 3 and lastGatherKind then
+    RecordSection(lastGatherKind)
     return
   end
-  if not IsSolo() then return end
 
-  local byCorpse = ReadLoot(looted)
-  if not byCorpse then return end
-
-  -- Looting a living mob means pick pocketing.
+  -- Looting your living target means pick pocketing.
   local targetGUID = UnitGUID("target")
-  for guid, items in pairs(byCorpse) do
-    local pickpocket = guid == targetGUID and not UnitIsDead("target")
-    if not pickpocket then
-      looted[guid] = true
-      CountKill(guid)
-      if counted[guid] then
-        local e = Entry(NpcIDFromGUID(guid))
-        for itemID in pairs(items) do e[itemID] = (e[itemID] or 0) + 1 end
+  if targetGUID and NpcIDFromGUID(targetGUID) and not UnitIsDead("target") then
+    for slot = 1, GetNumLootItems() do
+      if GetLootSourceInfo(slot) == targetGUID then
+        RecordSection(PICKPOCKET, { [targetGUID] = true })
+        return
       end
+    end
+  end
+
+  if not IsSolo() then return end
+  local byCorpse, money = ReadLoot(looted)
+  if not byCorpse then return end
+  for guid, items in pairs(byCorpse) do
+    looted[guid] = true
+    CountKill(guid)
+    if counted[guid] then
+      local e = Entry(NpcIDFromGUID(guid))
+      local anyItem = false
+      for itemID in pairs(items) do
+        e[itemID] = (e[itemID] or 0) + 1
+        if itemID > 0 then anyItem = true end
+      end
+      if not anyItem then NoteNoItems(guid) end
+      if money[guid] then NoteGold(guid, money[guid]) end
     end
   end
 end
@@ -247,7 +295,7 @@ function Recorder:Init()
   end
 
   -- Localized names of the gathering spells (the English ones are built in).
-  for id, kind in pairs({ [8613] = 1, [2366] = 2, [2575] = 3, [921] = 0 }) do
+  for id, kind in pairs({ [8613] = 1, [2366] = 2, [2575] = 3, [921] = 5 }) do
     local name = ns.SpellName(id)
     if name then gatherSpells[name] = kind end
   end
@@ -293,7 +341,7 @@ function Recorder:Init()
       -- state is kept until then because corpses are often checked after.
       local n = 0
       for _ in pairs(looted) do n = n + 1 end
-      if n > 2000 then wipe(looted); wipe(counted); wipe(names); wipe(died); wipe(gathered) end
+      if n > 2000 then wipe(looted); wipe(counted); wipe(names); wipe(died); wipe(gathered); wipe(pickpocketed) end
       C_Timer.After(5, function()
         if not (UnitAffectingCombat and UnitAffectingCombat("player")) then
           wipe(tapDenied); wipe(engaged)

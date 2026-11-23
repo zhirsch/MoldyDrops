@@ -42,6 +42,20 @@ function ns.BuildDropIndex()
   for id in pairs(ns.gather or {}) do addGather(id) end
   for id in pairs(ns.db.ownGather) do addGather(id) end
   for id in pairs(ns.db.community.gather or {}) do addGather(id) end
+  -- Pick pocketing, for rogues.
+  if ns.IsRogue() then
+    local seenPick = {}
+    local function addPick(npcID)
+      if seenPick[npcID] then return end
+      seenPick[npcID] = true
+      local kind, rows, note = ns.Tooltip.Pick(npcID)
+      if not kind then return end
+      for _, r in ipairs(rows) do put(r[1], npcID, r[2], note, kind) end
+    end
+    for id in pairs(ns.pick or {}) do addPick(id) end
+    for id in pairs(ns.db.ownPick) do addPick(id) end
+    for id in pairs(ns.db.community.pick or {}) do addPick(id) end
+  end
   return index
 end
 
@@ -119,7 +133,9 @@ local window = ns.CreateSearchWindow({
   end,
   onRowEnter = function(_, m)
     GameTooltip:SetText(m.name)
-    if m.gather then
+    if m.gather == ns.PICKPOCKET then
+      GameTooltip:AddLine("Pick Pocket: chance per mob pick pocketed.", 1, 1, 1, true)
+    elseif m.gather then
       GameTooltip:AddLine((ns.GATHER_NAMES[m.gather] or "Gathering") .. " the corpse: chance per corpse gathered.", 1, 1, 1, true)
     end
     GameTooltip:AddLine("Source: " .. (m.note or "?"), 0.6, 0.6, 0.6)

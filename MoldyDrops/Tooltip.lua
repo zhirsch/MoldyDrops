@@ -24,6 +24,7 @@ local function QualityHex(q)
 end
 
 local function FormatPct(p)
+  if p <= 0 then return "0%" end
   if p >= 10 then return ("%.0f%%"):format(p) end
   if p >= 1 then return ("%.1f%%"):format(p) end
   if p >= 0.1 then return ("%.2f%%"):format(p) end
@@ -100,15 +101,11 @@ function Tooltip.Choose(npcID)
   end
 end
 
--- What gathering the corpse yields (skinning, herbalism, mining, engineering).
--- Returns kind (1-4), rows { { itemID, percent per corpse gathered }, ... }
--- and a note; nil if nothing is known. Same source rules as Choose.
-function Tooltip.Gather(npcID)
+-- A separate section (gathering, pick pocketing). Returns kind, rows
+-- { { itemID, percent per corpse gathered / mob pick pocketed }, ... } and a
+-- note; nil if nothing is known. Same source rules as Choose.
+local function Section(own, comm, base, unit)
   local db = ns.db
-  local own = db.ownGather[npcID]
-  local comm = db.community.gather and db.community.gather[npcID]
-  local base = ns.gather and ns.gather[npcID]
-
   local obs, obsLabel
   if comm and (not own or comm[0] >= own[0]) then
     obs, obsLabel = comm, "community"
@@ -125,16 +122,97 @@ function Tooltip.Gather(npcID)
   end
 
   if obs and obs[0] >= ns.MIN_SAMPLE then
-    return obs.kind, observed(), ("%s, %s"):format(obsLabel, Count(obs[0], "corpse"))
+    return obs.kind, observed(), ("%s, %s"):format(obsLabel, Count(obs[0], unit))
   elseif base then
     local rows = {}
     for i = 2, #base - 1, 2 do rows[#rows + 1] = { base[i], base[i + 1] } end
     local note = "1.12 estimate"
-    if obs then note = note .. (" (%s: %s)"):format(obsLabel, Count(obs[0], "corpse")) end
+    if obs then note = note .. (" (%s: %s)"):format(obsLabel, Count(obs[0], unit)) end
     return base[1], rows, note
   elseif obs then
-    return obs.kind, observed(), ("%s, only %s"):format(obsLabel, Count(obs[0], "corpse"))
+    return obs.kind, observed(), ("%s, only %s"):format(obsLabel, Count(obs[0], unit))
   end
+end
+
+-- Skinning, herbalism, mining or engineering the corpse (kind 1-4).
+function Tooltip.Gather(npcID)
+  local db = ns.db
+  return Section(db.ownGather[npcID], db.community.gather and db.community.gather[npcID],
+    ns.gather and ns.gather[npcID], "corpse")
+end
+
+-- Pick pocketing the mob (kind 5).
+function Tooltip.Pick(npcID)
+  local db = ns.db
+  return Section(db.ownPick[npcID], db.community.pick and db.community.pick[npcID],
+    ns.pick and ns.pick[npcID], "mob")
+end
+
+-- The extra sections to show for a mob: { { kind, rows, note }, ... }.
+-- Pick pocketing is only shown to rogues.
+function Tooltip.Sections(npcID)
+  local out = {}
+  local kind, rows, note = Tooltip.Gather(npcID)
+  if kind and #rows > 0 then out[#out + 1] = { kind, rows, note } end
+  if ns.IsRogue() then
+    kind, rows, note = Tooltip.Pick(npcID)
+    if kind and #rows > 0 then out[#out + 1] = { kind, rows, note } end
+  end
+  return out
+end
+
+local K = ns.ENTRY_KEYS or { NO_ITEMS = -2, GOLD_N = -3, GOLD_SUM = -4, GOLD_MIN = -5, GOLD_MAX = -6 }
+
+-- Chance of a corpse with no items (percent), and gold { min, max, avg } in
+-- copper (nil if the mob doesn't drop gold). Uses observed data when Choose
+-- would, otherwise the 1.12 values.
+function Tooltip.Extras(npcID)
+  local db = ns.db
+  local own = db.own[npcID]
+  local comm = db.community.npcs and db.community.npcs[npcID]
+  local obs
+  if comm and (not own or comm[0] >= own[0]) then obs = comm elseif own and own[0] > 0 then obs = own end
+  local base = ns.extra and ns.extra[npcID]
+
+  if obs and obs[0] >= ns.MIN_SAMPLE then
+    local gold
+    local n = obs[K.GOLD_N]
+    if n and n > 0 then gold = { obs[K.GOLD_MIN], obs[K.GOLD_MAX], obs[K.GOLD_SUM] / n } end
+    return 100 * (obs[K.NO_ITEMS] or 0) / obs[0], gold
+  elseif base then
+    local gold
+    if base[3] and base[3] > 0 then gold = { base[2], base[3], (base[2] + base[3]) / 2 } end
+    return base[1], gold
+  elseif obs then
+    local gold
+    local n = obs[K.GOLD_N]
+    if n and n > 0 then gold = { obs[K.GOLD_MIN], obs[K.GOLD_MAX], obs[K.GOLD_SUM] / n } end
+    return 100 * (obs[K.NO_ITEMS] or 0) / obs[0], gold
+  end
+end
+
+-- "1g 2s 3c", colored like coins.
+function ns.FormatMoney(copper)
+  copper = math.floor((copper or 0) + 0.5)
+  local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
+  local parts = {}
+  if g > 0 then parts[#parts + 1] = "|cffffd700" .. g .. "g|r" end
+  if s > 0 then parts[#parts + 1] = "|cffc7c7cf" .. s .. "s|r" end
+  if c > 0 or #parts == 0 then parts[#parts + 1] = "|cffeda55f" .. c .. "c|r" end
+  return table.concat(parts, " ")
+end
+
+-- The "No items" and "Gold" lines, as { left, right } pairs.
+function Tooltip.ExtraLines(npcID)
+  local noItems, gold = Tooltip.Extras(npcID)
+  local out = {}
+  if noItems then out[#out + 1] = { "|cff9d9d9dNo items|r", "|cff9d9d9d" .. FormatPct(noItems) .. "|r" } end
+  if gold then
+    local range = gold[1] == gold[2] and ns.FormatMoney(gold[1])
+      or (ns.FormatMoney(gold[1]) .. " - " .. ns.FormatMoney(gold[2]))
+    out[#out + 1] = { "Gold  " .. range, "avg " .. ns.FormatMoney(gold[3]) }
+  end
+  return out
 end
 
 local MAX_CONTENT_LINES = 5
@@ -213,19 +291,22 @@ local function AddLoot(tooltip, unit)
   local expand = IsShiftKeyDown()
   local added = false
   local lines, source = Tooltip.Lines(npcID, ns.TOP_N, expand)
-  if lines and #lines > 0 then
+  local extras = Tooltip.ExtraLines(npcID)
+  if (lines and #lines > 0) or #extras > 0 then
     tooltip:AddLine(" ")
-    tooltip:AddDoubleLine("Drops", source, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
-    for _, line in ipairs(lines) do
+    tooltip:AddDoubleLine("Drops", source or "1.12 estimate", GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
+    for _, line in ipairs(lines or {}) do
       local left, right = Tooltip.LineText(line, expand)
       tooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
     end
+    for _, x in ipairs(extras) do tooltip:AddDoubleLine(x[1], x[2], 1, 1, 1, 1, 1, 1) end
     added = true
   end
 
-  -- Separate section for skinning / herbalism / mining / engineering the corpse.
-  local kind, rows, note = Tooltip.Gather(npcID)
-  if kind and #rows > 0 then
+  -- Separate sections: skinning / herbalism / mining / engineering the corpse,
+  -- and pick pocketing (rogues only).
+  for _, s in ipairs(Tooltip.Sections(npcID)) do
+    local kind, rows, note = s[1], s[2], s[3]
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine(ns.GATHER_NAMES[kind] or "Gathering", note, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
     for i = 1, math.min(ns.TOP_N, #rows) do

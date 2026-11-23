@@ -73,6 +73,7 @@ public static class LootBuilder
     static Dictionary<int, List<LootRow>> refLoot = new Dictionary<int, List<LootRow>>();
     static Dictionary<int, List<LootRow>> itemLoot = new Dictionary<int, List<LootRow>>(); // containers
     static Dictionary<int, List<LootRow>> skinLoot = new Dictionary<int, List<LootRow>>(); // skinning, herbs, mining, engineering
+    static Dictionary<int, List<LootRow>> pickLoot = new Dictionary<int, List<LootRow>>(); // pick pocketing
 
     // Which profession gathers from a corpse, from creature_template.CreatureTypeFlags:
     // 1 = skinning (default), 2 = herbalism (0x100), 3 = mining (0x200), 4 = engineering (0x8000).
@@ -118,6 +119,49 @@ public static class LootBuilder
         return result;
     }
 
+    // Chance that a loot table gives no items at all. Quest-only drops
+    // (negative chance) are left out, since they need the quest.
+    static Dictionary<int, double> refNothingCache = new Dictionary<int, double>();
+    static double NothingProb(List<LootRow> rows, int depth)
+    {
+        if (rows == null || depth > 8) return 1;
+        double nothing = 1;
+        foreach (var grp in rows.GroupBy(r => r.Group))
+        {
+            var list = grp.Where(r => r.Chance >= 0).ToList();
+            if (list.Count == 0) continue;
+            if (grp.Key == 0)
+            {
+                foreach (var r in list) nothing *= 1 - SomethingProb(r, r.Chance / 100.0, depth);
+            }
+            else
+            {
+                // A group gives one entry; with any equal-chance entries it always gives something.
+                double explicitSum = list.Where(r => r.Chance > 0).Sum(r => r.Chance);
+                bool hasEqual = list.Any(r => r.Chance == 0);
+                double pGroup = hasEqual ? 1 : Math.Min(1, explicitSum / 100.0);
+                nothing *= 1 - pGroup;
+            }
+        }
+        return nothing;
+    }
+
+    // Chance one row gives at least one item, given its roll chance p.
+    static double SomethingProb(LootRow r, double p, int depth)
+    {
+        if (r.MinOrRef >= 0) return p;
+        int refId = -r.MinOrRef;
+        double refNothing;
+        if (!refNothingCache.TryGetValue(refId, out refNothing))
+        {
+            List<LootRow> rr; refLoot.TryGetValue(refId, out rr);
+            refNothing = NothingProb(rr, depth + 1);
+            refNothingCache[refId] = refNothing;
+        }
+        int times = Math.Max(1, r.MaxCount);
+        return 1 - Math.Pow(1 - p * (1 - refNothing), times);
+    }
+
     static void AddSource(Dictionary<int, double> result, LootRow r, double p, int depth)
     {
         if (r.MinOrRef < 0)
@@ -152,6 +196,8 @@ public static class LootBuilder
         var itemInfo = new Dictionary<int, Tuple<string, int>>();
         var mobInfo = new Dictionary<int, Tuple<string, int, int>>();
         var gatherOf = new Dictionary<int, Tuple<int, int>>(); // npc -> (skinning loot id, gather kind)
+        var goldOf = new Dictionary<int, Tuple<int, int>>();   // npc -> (min copper, max copper)
+        var pickOf = new Dictionary<int, int>();                // npc -> pickpocketing loot id
 
         Stream s = File.OpenRead(dumpPath);
         if (dumpPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)) s = new GZipStream(s, CompressionMode.Decompress);
@@ -173,6 +219,10 @@ public static class LootBuilder
                         {
                             int loot = I(f[56]);
                             if (loot > 0) lootIdOf[I(f[0])] = loot;
+                            int minGold = I(f[54]), maxGold = I(f[55]);
+                            if (maxGold > 0) goldOf[I(f[0])] = Tuple.Create(minGold, maxGold);
+                            int pick = I(f[57]);
+                            if (pick > 0) pickOf[I(f[0])] = pick;
                             int skin = I(f[58]);
                             if (skin > 0) gatherOf[I(f[0])] = Tuple.Create(skin, GatherKind(I(f[20])));
                             mobInfo[I(f[0])] = Tuple.Create(f[1] ?? "", I(f[3]), I(f[4]));
@@ -185,9 +235,11 @@ public static class LootBuilder
                     case "reference_loot_template":
                     case "item_loot_template":
                     case "skinning_loot_template":
+                    case "pickpocketing_loot_template":
                         var target = table == "creature_loot_template" ? creatureLoot
                             : table == "item_loot_template" ? itemLoot
-                            : table == "skinning_loot_template" ? skinLoot : refLoot;
+                            : table == "skinning_loot_template" ? skinLoot
+                            : table == "pickpocketing_loot_template" ? pickLoot : refLoot;
                         foreach (var f in Tuples(line))
                         {
                             var row = new LootRow { Item = I(f[1]), Chance = D(f[2]), Group = I(f[3]), MinOrRef = I(f[4]), MaxCount = I(f[5]) };
@@ -262,6 +314,30 @@ public static class LootBuilder
             }
         }
 
+        // Chance of no items, and gold: extra[npc] = { noItemsPercent [, minCopper, maxCopper] }
+        var extraLines = new List<string>();
+        foreach (var npc in openWorld.OrderBy(x => x))
+        {
+            int lootId;
+            bool hasLoot = lootIdOf.TryGetValue(npc, out lootId) && creatureLoot.ContainsKey(lootId);
+            Tuple<int, int> gold;
+            bool hasGold = goldOf.TryGetValue(npc, out gold);
+            if (!hasLoot && !hasGold) continue;
+            double nothing = hasLoot ? NothingProb(creatureLoot[lootId], 0) : 1;
+            double pct = nothing * 100;
+            var es = new StringBuilder();
+            es.Append('[').Append(npc).Append("]={").Append(pct.ToString(pct >= 1 ? "0.#" : "0.###", CultureInfo.InvariantCulture));
+            if (hasGold) es.Append(',').Append(gold.Item1).Append(',').Append(gold.Item2);
+            es.Append("},");
+            extraLines.Add(es.ToString());
+            Tuple<string, int, int> em;
+            if (!namedMobs.Contains(npc) && mobInfo.TryGetValue(npc, out em))
+            {
+                mobLines.Add(string.Format("[{0}]={{{1},{2},{3}}},", npc, LuaStr(em.Item1), em.Item2, em.Item3));
+                namedMobs.Add(npc);
+            }
+        }
+
         // What gathering a corpse yields: gather[npc] = { kind, itemID, percent, ... }
         var gatherLines = new List<string>();
         var gatherCache = new Dictionary<int, List<KeyValuePair<int, double>>>();
@@ -298,6 +374,34 @@ public static class LootBuilder
             }
         }
 
+        // Pick pocketing: pick[npc] = { 5, itemID, percent per mob pick pocketed, ... }
+        var pickLines = new List<string>();
+        var pickCache = new Dictionary<int, List<KeyValuePair<int, double>>>();
+        foreach (var npc in openWorld.OrderBy(x => x))
+        {
+            int pickId;
+            if (!pickOf.TryGetValue(npc, out pickId)) continue;
+            List<KeyValuePair<int, double>> items;
+            if (!pickCache.TryGetValue(pickId, out items))
+            {
+                List<LootRow> rows; pickLoot.TryGetValue(pickId, out rows);
+                items = Expand(rows, 0).Where(kv => itemInfo.ContainsKey(kv.Key))
+                    .OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).Take(topN).ToList();
+                pickCache[pickId] = items;
+            }
+            if (items.Count == 0) continue;
+            var ps = new StringBuilder();
+            ps.Append('[').Append(npc).Append("]={5");
+            foreach (var kv in items)
+            {
+                double pct = kv.Value * 100;
+                ps.Append(',').Append(kv.Key).Append(',').Append(pct.ToString(pct >= 1 ? "0.#" : "0.###", CultureInfo.InvariantCulture));
+                usedItems.Add(kv.Key);
+            }
+            ps.Append("},");
+            pickLines.Add(ps.ToString());
+        }
+
         // Contents of containers (clams, lockboxes, bags of loot) that mobs drop:
         // chance of each item per container opened.
         var contentLines = new List<string>();
@@ -326,6 +430,8 @@ public static class LootBuilder
         o.AppendLine("-- These are estimates from the original game, not measured on WoW Forever.");
         o.AppendLine("-- itemID 0 in base = any grey (poor quality) item; baseGrey[npcID] lists those grey items.");
         o.AppendLine("-- contents[containerItemID] = { itemID, percent per container opened, ... }");
+        o.AppendLine("-- pick[npcID] = { 5, itemID, percent per mob pick pocketed, ... }");
+        o.AppendLine("-- extra[npcID] ={ percent chance of no items [, min copper, max copper] } (gold omitted if none)");
         o.AppendLine("-- gather[npcID] = { kind, itemID, percent per corpse gathered, ... }; kind 1 skinning, 2 herbalism, 3 mining, 4 engineering");
         o.AppendLine("-- base[npcID] = { itemID, percent, ... }   items[itemID] = { name, quality }   mobs[npcID] = { name, minLevel, maxLevel }");
         o.AppendLine("local _, ns = ...");
@@ -339,6 +445,12 @@ public static class LootBuilder
         o.AppendLine("ns.baseGrey = {");
         foreach (var l in greyLines) o.AppendLine(l);
         o.AppendLine("}");
+        o.AppendLine("ns.pick = {");
+        foreach (var l in pickLines) o.AppendLine(l);
+        o.AppendLine("}");
+        o.AppendLine("ns.extra = {");
+        foreach (var l in extraLines) o.AppendLine(l);
+        o.AppendLine("}");
         o.AppendLine("ns.gather = {");
         foreach (var l in gatherLines) o.AppendLine(l);
         o.AppendLine("}");
@@ -349,8 +461,9 @@ public static class LootBuilder
         foreach (var l in mobLines) o.AppendLine(l);
         o.AppendLine("}");
         File.WriteAllText(outPath, o.ToString(), new UTF8Encoding(false));
-        return string.Format("{0} open-world NPCs with loot, gathering on {3} (skin {4}, herb {5}, mine {6}, engineer {7}), {1} items, {2:N0} bytes",
-            npcLines.Count, usedItems.Count, o.Length, gatherLines.Count, kindCounts[1], kindCounts[2], kindCounts[3], kindCounts[4]);
+        return string.Format("{0} open-world NPCs with loot, gathering on {3} (skin {4}, herb {5}, mine {6}, engineer {7}), pick pocket on {8}, {9} containers, {1} items, {2:N0} bytes",
+            npcLines.Count, usedItems.Count, o.Length, gatherLines.Count, kindCounts[1], kindCounts[2], kindCounts[3], kindCounts[4],
+            pickLines.Count, contentLines.Count);
     }
 }
 '@

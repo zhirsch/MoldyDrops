@@ -38,11 +38,14 @@ observations (                     -- latest cumulative totals per contributor
   client_hash TEXT, npc_id INTEGER, kills INTEGER,
   PRIMARY KEY (client_hash, npc_id)
 )
-observation_grey (                 -- corpses with at least one grey item (the G count)
-  client_hash TEXT, npc_id INTEGER, count INTEGER,
+observation_extra (                -- per-mob extras from N records
+  client_hash TEXT, npc_id INTEGER,
+  grey INTEGER,                    -- G: corpses with at least one grey item
+  no_items INTEGER,                -- E: corpses with no items
+  gold_n INTEGER, gold_sum INTEGER, gold_min INTEGER, gold_max INTEGER,  -- $
   PRIMARY KEY (client_hash, npc_id)
 )
-gathering (                        -- S records: skinning/herbalism/mining/engineering
+gathering (                        -- S records: skinning/herbalism/mining/engineering/pick pocketing
   client_hash TEXT, npc_id INTEGER, kind INTEGER, corpses INTEGER,
   PRIMARY KEY (client_hash, npc_id, kind)
 )
