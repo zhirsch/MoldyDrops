@@ -253,10 +253,26 @@ local function RecordSection(kind, guids)
   end
 end
 
+-- What's being looted right now, for the luck tags on loot messages:
+-- ns.lootContext = { at = time, section = "drop"/"gather"/"pick", items = { [itemID] = npcID } }
+local function SetLootContext(section)
+  local items = {}
+  for slot = 1, GetNumLootItems() do
+    if GetLootSlotType(slot) == LOOT_SLOT_ITEM then
+      local link = GetLootSlotLink(slot)
+      local itemID = link and tonumber(link:match("item:(%d+)"))
+      local npcID = NpcIDFromGUID(Plain(GetLootSourceInfo(slot)))
+      if itemID and npcID then items[itemID] = npcID end
+    end
+  end
+  ns.lootContext = { at = GetTime(), section = section, items = items }
+end
+
 local function OnLootOpened()
-  if IsFishingLoot and IsFishingLoot() then return end
-  if ns.db.settings.openWorldOnly and IsInInstance() then return end
+  if IsFishingLoot and IsFishingLoot() then ns.lootContext = nil return end
   if GetTime() - lastGatherAt < 3 and lastGatherKind then
+    SetLootContext(lastGatherKind == PICKPOCKET and "pick" or "gather")
+    if ns.db.settings.openWorldOnly and IsInInstance() then return end
     RecordSection(lastGatherKind)
     return
   end
@@ -266,11 +282,16 @@ local function OnLootOpened()
   if targetGUID and NpcIDFromGUID(targetGUID) and not UnitIsDead("target") then
     for slot = 1, GetNumLootItems() do
       if GetLootSourceInfo(slot) == targetGUID then
+        SetLootContext("pick")
+        if ns.db.settings.openWorldOnly and IsInInstance() then return end
         RecordSection(PICKPOCKET, { [targetGUID] = true })
         return
       end
     end
   end
+
+  SetLootContext("drop")
+  if ns.db.settings.openWorldOnly and IsInInstance() then return end
 
   if not IsSolo() then return end
   local byCorpse, money, counts = ReadLoot(looted)

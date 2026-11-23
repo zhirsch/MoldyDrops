@@ -50,6 +50,7 @@ local function InitDB()
   db.settings = db.settings or {}
   if db.settings.enabled == nil then db.settings.enabled = true end
   if db.settings.openWorldOnly == nil then db.settings.openWorldOnly = true end
+  if db.settings.luck == nil then db.settings.luck = true end
   db.own = db.own or {}
   db.ownGather = db.ownGather or {}
   db.ownPick = db.ownPick or {}
@@ -172,6 +173,7 @@ local HELP = {
   "|cffffffff/drops import|r - paste community data from the website",
   "|cffffffff/drops stats|r - show the state of the database",
   "|cffffffff/drops tooltip|r - turn the tooltip on or off",
+  "|cffffffff/drops luck|r - turn the (Lucky!) tags on loot messages on or off",
   "|cffffffff/drops instances|r - also show the tooltip inside dungeons and raids",
   "|cffffffff/drops reset|r - delete the loot you've recorded",
 }
@@ -194,6 +196,9 @@ SlashCmdList.MOLDYDROPS = function(msg)
   elseif cmd == "tooltip" then
     db.settings.enabled = not db.settings.enabled
     ns.Print(db.settings.enabled and "tooltip enabled" or "tooltip disabled")
+  elseif cmd == "luck" then
+    db.settings.luck = not db.settings.luck
+    ns.Print(db.settings.luck and "luck tags on loot messages enabled" or "luck tags on loot messages disabled")
   elseif cmd == "instances" then
     db.settings.openWorldOnly = not db.settings.openWorldOnly
     ns.Print(db.settings.openWorldOnly and "open world only" or "showing in instances too")

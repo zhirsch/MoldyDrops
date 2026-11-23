@@ -16,6 +16,7 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops import` | Opens a window to paste community data from the website |
 | `/drops stats` | Prints the state of the database |
 | `/drops tooltip` | Turns the tooltip on or off |
+| `/drops luck` | Turns the luck tags on your loot messages on or off |
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
 | `/drops reset` | Deletes the loot, gathering and pick pocketing you've recorded |
 
@@ -26,6 +27,8 @@ Under the drops, the tooltip also shows the chance a corpse has **no items**, an
 Mobs you can skin, herb, mine or salvage with engineering get a second section in the tooltip and search window, with the chance of each item per corpse gathered. The 1.12 data only covers skinning, since herb, mining and engineering mobs came later; the addon records what you skin, herb and mine, so those fill in from your recordings and the community data.
 
 In either search window, **Ctrl+click** an item to see every mob that gives it (`/drops item`), or Ctrl+click a mob to see its drops (`search`). The **Back** button returns to the previous search. `/drops item` covers drops, gathering, pick pocketing (on a rogue), and items inside containers that mobs drop. For those, the chance is the container's chance times the item's chance inside it. `/drops item` only knows each mob's top 10 drops from the bundled 1.12 data (plus everything recorded or imported), so very rare world drops may be missing.
+
+When you loot, skin, gather or pick pocket something unlikely, your loot message gets a gold tag with the chance, like **(Lucky! 4.2%)**: Lucky under 10%, Very lucky under 2%, Incredibly lucky under 0.5%. The chance is the one the tooltip shows for that mob.
 
 Items that can come more than one at a time show the count range after the name, like **Mageweave Cloth x1-2**. Counts you record replace the 1.12 range.
 

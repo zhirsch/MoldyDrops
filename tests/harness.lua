@@ -26,6 +26,10 @@ end
 function wipe(t) for k in pairs(t) do t[k] = nil end return t end
 tinsert = table.insert
 UISpecialFrames = {}
+LOOT_ITEM_SELF = "You receive loot: %s."
+LOOT_ITEM_SELF_MULTIPLE = "You receive loot: %sx%d."
+local chatFilters = {}
+function ChatFrame_AddMessageEventFilter(event, fn) chatFilters[event] = fn end
 SlashCmdList = {}
 local frames = {}
 -- Any method you call on a stub returns another stub, so UI-building code
@@ -726,6 +730,38 @@ local c660 = comm2.npcs[660]
 check("snapshot Q parsed, no phantom items", c660.q and c660.q[4338][1] == 1 and c660.q[4338][2] == 4
   and c660[1] == nil and c660[4] == nil and c660[40] == nil and c660[4338] == 20)
 check("snapshot Q on S records", comm2.gather[157].q and comm2.gather[157].q[2318][2] == 3 and comm2.gather[157][1] == nil)
+
+-- luck tags on loot messages (Defias Thug, 1.12 data: Small Red Pouch 0.1%, Spring Water 6.4%)
+local function link(id, name) return "|cffffffff|Hitem:" .. id .. "::::::::|h[" .. name .. "]|h|r" end
+local gThug = guid(38, 1)
+Loot({ { guid = gThug, item = 805, name = "Small Red Pouch", q = 1 }, { guid = gThug, item = 159, name = "Refreshing Spring Water", q = 1 } })
+check("loot context remembers the mob and action", ns.lootContext and ns.lootContext.section == "drop" and ns.lootContext.items[805] == 38)
+local filter = chatFilters.CHAT_MSG_LOOT
+check("chat filter registered for loot messages", type(filter) == "function")
+local _, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(805, "Small Red Pouch") .. ".")
+check("0.1% drop: Incredibly lucky! in gold, right after the link",
+  res == "You receive loot: " .. link(805, "Small Red Pouch") .. " |cffffd100(Incredibly lucky! 0.10%)|r.", res)
+_, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(159, "Refreshing Spring Water") .. "x2.")
+check("6.4% drop: Lucky! with the chance (stack message too)", res and res:find("(Lucky! 6.4%)|rx2.", 1, true), res)
+local same, unchanged = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(752, "Red Burlap Bandana") .. ".")
+check("item not from this corpse: unchanged", same == false and unchanged == nil)
+_, res = filter(nil, "CHAT_MSG_LOOT", "Bob receives loot: " .. link(805, "Small Red Pouch") .. ".")
+check("other players' loot: unchanged", res == nil)
+MoldyDropsDB.settings.luck = false
+_, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(805, "Small Red Pouch") .. ".")
+check("/drops luck off: unchanged", res == nil)
+SlashCmdList.MOLDYDROPS("luck")
+check("/drops luck toggles it back on", MoldyDropsDB.settings.luck == true)
+now = now + 31
+_, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(805, "Small Red Pouch") .. ".")
+check("old loot context isn't used", res == nil)
+now = now + 10
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "x", 8613)
+Loot({ { guid = guid(113, 5), item = 2318, name = "Light Leather", q = 1 } })
+check("skinning sets a gathering context", ns.lootContext.section == "gather" and ns.lootContext.items[2318] == 113)
+_, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(2318, "Light Leather") .. ".")
+check("common gathering result (80%): no tag", res == nil)
+now = now + 10
 
 -- reset clears everything you recorded (last, since it wipes the test data)
 SlashCmdList.MOLDYDROPS("reset")
