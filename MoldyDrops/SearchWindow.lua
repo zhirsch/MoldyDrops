@@ -322,9 +322,9 @@ function ns.CreateSearchWindow(spec)
       row:Hide()
       d.rows[i] = row
     end
-    -- Detail scrollbar runs beside the rows, from the first row to the bottom.
+    -- Detail scrollbar runs beside the rows, from the first row to the last.
     f.detailBar:SetPoint("TOPLEFT", d.rows[1], "TOPRIGHT", 6, 0)
-    f.detailBar:SetPoint("BOTTOMLEFT", d, "BOTTOMRIGHT", 6, 0)
+    f.detailBar:SetPoint("BOTTOMLEFT", d.rows[DETAIL_ROWS], "BOTTOMRIGHT", 6, 0)
   end
 
   function win:IsShown() return f ~= nil and f:IsShown() end
