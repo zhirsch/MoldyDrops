@@ -51,7 +51,7 @@ local window = ns.CreateSearchWindow({
       name = r.name,
       sub = (level ~= "" and ("Level " .. level .. "  ·  ") or "") .. "NPC " .. r.id,
     }
-    local expand = IsShiftKeyDown()
+    local expand = ns.ShiftHeld()
     local out = {}
     local rows, source, expandable = ns.Tooltip.DropSection(r.id, ns.WINDOW_N, expand)
     if source then

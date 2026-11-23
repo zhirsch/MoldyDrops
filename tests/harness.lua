@@ -571,6 +571,27 @@ SlashCmdList.MOLDYDROPS("s kobold")
 check("/drops s still searches just the rest", searched == "kobold", searched)
 ns.ShowSearch = realShow
 
+-- Shift while the search box has the cursor (the game doesn't see the key)
+ns.ShowSearch("kobold vermin", 6)
+local sbw = FrameNamed("MoldyDropsSearchFrame")
+local function shownKinds()
+  local kinds = {}
+  for _, row in ipairs(sbw.detail.rows) do
+    if row.shown ~= false and type(row.data) == "table" and row.data[3] then kinds[row.data[3]] = true end
+  end
+  return kinds
+end
+shift = false
+check("search box: grey items collapsed before Shift", not shownKinds().grey)
+sbw.box.OnKeyDown(sbw.box, "LSHIFT")
+check("search box: Shift pressed in the box expands grey items", shownKinds().grey == true)
+sbw.box.OnKeyUp(sbw.box, "LSHIFT")
+check("search box: releasing Shift collapses them again", not shownKinds().grey)
+sbw.box.OnKeyDown(sbw.box, "A")
+check("search box: other keys don't expand", not shownKinds().grey)
+check("Shift override is cleared afterwards", ns.shiftOverride == nil)
+sbw:Hide()
+
 -- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
 local sw = tostring(SRC["SearchWindow.lua"])
 check("list and detail rows don't wrap", sw:find("b.text:SetWordWrap(false)", 1, true) ~= nil

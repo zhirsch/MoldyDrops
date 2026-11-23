@@ -327,7 +327,7 @@ local function AddLoot(tooltip, unit)
 
   local npcID = ns.NpcIDFromGUID(UnitGUID(unit))
   if not npcID then return end
-  local expand = IsShiftKeyDown()
+  local expand = ns.ShiftHeld()
   local added = false
   local rows, source = Tooltip.DropSection(npcID, ns.TOP_N, expand)
   if #rows > 0 then

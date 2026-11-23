@@ -24,6 +24,13 @@ function ns.Print(msg) print(ns.PREFIX .. msg) end
 ns.GATHER_NAMES = { "Skinning", "Herbalism", "Mining", "Engineering", "Pick Pocket" }
 ns.PICKPOCKET = 5
 
+-- Is Shift held? A focused edit box swallows the key, so the search box
+-- reports Shift itself through ns.shiftOverride.
+function ns.ShiftHeld()
+  if ns.shiftOverride ~= nil then return ns.shiftOverride end
+  return IsShiftKeyDown() and true or false
+end
+
 function ns.IsRogue()
   return UnitClass and select(2, UnitClass("player")) == "ROGUE"
 end

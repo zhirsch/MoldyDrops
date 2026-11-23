@@ -158,6 +158,19 @@ function ns.CreateSearchWindow(spec)
       if userInput then RunSearch(self:GetText()) end
     end)
     box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    -- While the box has the cursor it gets the Shift key, not the game, so
+    -- pass Shift presses on to the window (expands grey items / contents).
+    local function OnShift(down)
+      ns.shiftOverride = down
+      win:Reselect()
+      ns.shiftOverride = nil
+    end
+    box:SetScript("OnKeyDown", function(_, key)
+      if key == "LSHIFT" or key == "RSHIFT" then OnShift(true) end
+    end)
+    box:SetScript("OnKeyUp", function(_, key)
+      if key == "LSHIFT" or key == "RSHIFT" then OnShift(false) end
+    end)
     box:SetScript("OnEscapePressed", function() f:Hide() end)
     f.box = box
 
