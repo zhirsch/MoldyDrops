@@ -52,29 +52,36 @@ local window = ns.CreateSearchWindow({
       sub = (level ~= "" and ("Level " .. level .. "  ·  ") or "") .. "NPC " .. r.id,
     }
     local expand = IsShiftKeyDown()
-    local lines, source, hasGreys = ns.Tooltip.Lines(r.id, ns.WINDOW_N, expand)
+    local lines, source, expandable = ns.Tooltip.Lines(r.id, ns.WINDOW_N, expand)
     if not lines or #lines == 0 then
       header.source = "No drop data for this mob yet."
       return header, {}
     end
-    header.source = "Source: " .. source
+    header.source = "Source: " .. source .. ((expandable and not expand) and "  ·  hold Shift for more" or "")
     local out = {}
     for i, line in ipairs(lines) do
-      local left, right = ns.Tooltip.LineText(line, expand, hasGreys)
-      out[i] = { left, right, line[1] }
+      local left, right = ns.Tooltip.LineText(line, expand)
+      out[i] = { left, right, line }
     end
     return header, out
   end,
-  onRowEnter = function(_, itemID)
+  onRowEnter = function(_, line)
+    local itemID, kind = line[1], line[3]
     if itemID == ns.GREY then
       GameTooltip:SetText("Grey items")
       GameTooltip:AddLine("Chance of at least one poor-quality (grey) item per kill.", 1, 1, 1, true)
     else
       GameTooltip:SetHyperlink("item:" .. itemID)
-      GameTooltip:AddLine("Click to see every mob that drops it.", 0.6, 0.6, 0.6)
+      if kind == "content" then
+        GameTooltip:AddLine("Chance per container opened, from 1.12 data.", 0.6, 0.6, 0.6)
+      else
+        GameTooltip:AddLine("Click to see every mob that drops it.", 0.6, 0.6, 0.6)
+      end
     end
   end,
-  onRowClick = function(itemID)
+  onRowClick = function(line)
+    local itemID = line[1]
+    if line[3] == "content" then return end
     if itemID ~= ns.GREY then
       local name = ns.ItemInfo(itemID)
       ns.ShowItemSearch(name, itemID)

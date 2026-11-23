@@ -21,7 +21,7 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 
 In either search window, click a drop to see every mob that drops it, or click a mob to see its drops. `rsearch` only knows each mob's top 10 drops from the bundled 1.12 data (plus everything recorded or imported), so very rare world drops may be missing.
 
-All grey (poor quality) items share one "Grey items" row. Hold **Shift** to list them individually, in the tooltip or the search window.
+All grey (poor quality) items share one "Grey items" row. Hold **Shift** to list them individually, in the tooltip or the search window. Shift also lists what's inside containers such as clams, with the chance of each item per container opened. Container contents come from the 1.12 data, so containers that are new in WoW Forever don't show contents.
 
 ## Where the numbers come from
 

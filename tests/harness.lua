@@ -184,11 +184,30 @@ check("collapsed: 5 lines", #lines == 5 and hasGreys, #lines)
 local left = ns.Tooltip.LineText(lines[1], false, true)
 check("grey row label with Shift hint", left:find("Grey items", 1, true) and left:find("(Shift)", 1, true), left)
 lines = ns.Tooltip.Lines(6, 5, true)
-check("expanded: grey children follow grey row", #lines > 5 and lines[2][1] == 755 and lines[2][3] == true, #lines)
+check("expanded: grey children follow grey row", #lines > 5 and lines[2][1] == 755 and lines[2][3] == "grey", #lines)
 left = ns.Tooltip.LineText(lines[2], true, true)
 check("child indented, no hint", left:sub(1, 4) == "    " and not left:find("Shift", 1, true), left)
 left = ns.Tooltip.LineText(lines[1], true, true)
 check("grey row without hint when expanded", not left:find("Shift", 1, true), left)
+
+-- containers: Murloc Coastrunner (126) drops Small Barnacled Clam (5523)
+check("clam contents bundled", ns.contents[5523] and ns.contents[5523][1] == 5503 and ns.contents[5523][2] == 100)
+lines = ns.Tooltip.Lines(126, 5, false)
+local clamLine
+for _, l in ipairs(lines) do if l[1] == 5523 then clamLine = l end end
+check("collapsed: container listed, contents hidden", clamLine ~= nil and (function()
+  for _, l in ipairs(lines) do if l[3] == "content" then return false end end return true end)())
+left = ns.Tooltip.LineText(clamLine, false)
+check("container shows Shift hint", left:find("Small Barnacled Clam", 1, true) and left:find("(Shift)", 1, true), left)
+lines = ns.Tooltip.Lines(126, 5, true)
+local at
+for i, l in ipairs(lines) do if l[1] == 5523 then at = i end end
+check("expanded: contents follow the container", at and lines[at + 1][1] == 5503 and lines[at + 1][3] == "content"
+  and lines[at + 2][1] == 5498 and near(lines[at + 2][2], 5), at)
+local cl, cr = ns.Tooltip.LineText(lines[at + 1], true)
+check("content line text", cl:find("in it:", 1, true) and cl:find("Clam Meat", 1, true) and cr:find("100%", 1, true), cl .. " | " .. cr)
+check("container hint gone when expanded", not ns.Tooltip.LineText(lines[at], true):find("Shift", 1, true))
+check("non-container has no contents", ns.Tooltip.Contents(755) == nil)
 
 -- a new WoW Forever mob: name learned from the kill
 local gF = guid(274300, 1)

@@ -97,34 +97,67 @@ function Tooltip.Choose(npcID)
   end
 end
 
--- The lines to display: up to maxRows rows. With expandGrey (Shift held),
--- the grey items are listed under the grey row; they don't count toward maxRows.
--- Each line is { itemID, percent, isGreyChild }. Also returns the note.
-function Tooltip.Lines(npcID, maxRows, expandGrey)
+local MAX_CONTENT_LINES = 5
+
+-- What's inside a container item (clam, lockbox...): { { itemID, percent per
+-- container opened }, ... }, or nil if it isn't a known container.
+function Tooltip.Contents(itemID)
+  local c = ns.contents and ns.contents[itemID]
+  if not c then return nil end
+  local out = {}
+  for i = 1, #c - 1, 2 do out[#out + 1] = { c[i], c[i + 1] } end
+  return out
+end
+
+-- The lines to display: up to maxRows rows. With expand (Shift held), grey
+-- items are listed under the grey row and container contents under each
+-- container; those extra lines don't count toward maxRows.
+-- Each line is { itemID, percent, kind }, kind nil, "grey" or "content".
+-- Also returns the source note and whether anything can be expanded.
+function Tooltip.Lines(npcID, maxRows, expand)
   local rows, greys, note = Tooltip.Choose(npcID)
   if not rows then return nil end
-  local lines = {}
-  for i = 1, math.min(maxRows, #rows) do
-    local r = rows[i]
-    lines[#lines + 1] = { r[1], r[2], false }
-    if r[1] == ns.GREY and expandGrey then
-      for j = 1, math.min(MAX_GREY_LINES, #greys) do
-        lines[#lines + 1] = { greys[j][1], greys[j][2], true }
+  local lines, expandable = {}, false
+  local function add(itemID, pct, kind)
+    lines[#lines + 1] = { itemID, pct, kind }
+    local inside = itemID ~= ns.GREY and Tooltip.Contents(itemID)
+    if inside then
+      expandable = true
+      if expand then
+        for j = 1, math.min(MAX_CONTENT_LINES, #inside) do
+          lines[#lines + 1] = { inside[j][1], inside[j][2], "content" }
+        end
       end
     end
   end
-  return lines, note, #greys > 0
+  for i = 1, math.min(maxRows, #rows) do
+    local r = rows[i]
+    add(r[1], r[2], nil)
+    if r[1] == ns.GREY and #greys > 0 then
+      expandable = true
+      if expand then
+        for j = 1, math.min(MAX_GREY_LINES, #greys) do add(greys[j][1], greys[j][2], "grey") end
+      end
+    end
+  end
+  return lines, note, expandable
 end
 
--- Text for one line: colored item name (indented if a grey child) and percent.
-function Tooltip.LineText(line, expandGrey, hasGreys)
-  local itemID, pct, child = line[1], line[2], line[3]
+-- Text for one line: colored item name and percent. Grey items are indented
+-- under the grey row; container contents are indented further, with their
+-- chance per container opened shown in grey.
+function Tooltip.LineText(line, expand)
+  local itemID, pct, kind = line[1], line[2], line[3]
   local name, quality = ns.ItemInfo(itemID)
   local text = QualityHex(quality or 1) .. name .. "|r"
-  if child then
+  if kind == "content" then
+    return "      |cff808080in it:|r " .. text, "|cff9d9d9d" .. FormatPct(pct) .. "|r"
+  elseif kind == "grey" then
     text = "    " .. text
-  elseif itemID == ns.GREY and hasGreys and not expandGrey then
-    text = text .. " |cff808080(Shift)|r"
+  end
+  if not expand and kind ~= "content" then
+    local hasChildren = (itemID == ns.GREY) or Tooltip.Contents(itemID)
+    if hasChildren then text = text .. " |cff808080(Shift)|r" end
   end
   return text, FormatPct(pct)
 end
@@ -138,13 +171,13 @@ local function AddLoot(tooltip, unit)
   local npcID = ns.NpcIDFromGUID(UnitGUID(unit))
   if not npcID then return end
   local expand = IsShiftKeyDown()
-  local lines, source, hasGreys = Tooltip.Lines(npcID, ns.TOP_N, expand)
+  local lines, source = Tooltip.Lines(npcID, ns.TOP_N, expand)
   if not lines or #lines == 0 then return end
 
   tooltip:AddLine(" ")
   tooltip:AddDoubleLine("Drops", source, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
   for _, line in ipairs(lines) do
-    local left, right = Tooltip.LineText(line, expand, hasGreys)
+    local left, right = Tooltip.LineText(line, expand)
     tooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
   end
   tooltip:Show()
