@@ -185,6 +185,32 @@ check("base gold range", gold and gold[1] == 1 and gold[2] == 4 and gold[3] == 2
 local xl = ns.Tooltip.ExtraLines(6)
 check("No items and Gold lines", #xl == 2 and xl[1][1]:find("No items", 1, true) and xl[2][1]:find("1c", 1, true)
   and xl[2][1]:find("4c", 1, true) and xl[2][2]:find("avg", 1, true), xl[2] and xl[2][1])
+-- "No items" sits among the drops in order of chance; gold stays last.
+local function checkPlacement(npcID, expand, label)
+  local rows = ns.Tooltip.DropSection(npcID, 5, expand)
+  local ni = ns.Tooltip.Extras(npcID)
+  local at
+  for i, r in ipairs(rows) do if r[1]:find("No items", 1, true) then at = i end end
+  local ok = at ~= nil
+  for i, r in ipairs(rows) do
+    local line = r[3]
+    if ok and line and line[3] == nil then -- top-level drop
+      if i < at and line[2] < ni then ok = false end
+      if i > at and line[2] > ni then ok = false end
+    end
+  end
+  -- never between a row and its grey items / container contents
+  if ok and rows[at + 1] and rows[at + 1][3] and rows[at + 1][3][3] ~= nil then ok = false end
+  if ok and rows[#rows][1]:find("Gold", 1, true) == nil and ns.Tooltip.Extras(npcID) and select(2, ns.Tooltip.Extras(npcID)) then ok = false end
+  check("No items sorted: " .. label, ok, at)
+  return rows, at
+end
+local drake, at = checkPlacement(7044, false, "Black Drake (71%) goes first")
+check("Black Drake: No items is the first row", at == 1 and drake[#drake][1]:find("Gold", 1, true), at)
+checkPlacement(6, false, "Kobold Vermin")
+checkPlacement(6, true, "Kobold Vermin with Shift")
+checkPlacement(113, false, "Stonetusk Boar")
+checkPlacement(126, true, "Murloc Coastrunner with Shift (container)")
 noItems, gold = ns.Tooltip.Extras(113) -- Stonetusk Boar: beasts drop no gold
 check("no gold line for beasts", noItems ~= nil and gold == nil and #ns.Tooltip.ExtraLines(113) == 1)
 check("money formatting", ns.FormatMoney(12345):find("1g", 1, true) and ns.FormatMoney(12345):find("23s", 1, true)

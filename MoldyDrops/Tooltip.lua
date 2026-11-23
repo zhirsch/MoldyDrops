@@ -280,6 +280,36 @@ function Tooltip.LineText(line, expand)
   return text, FormatPct(pct)
 end
 
+-- The whole Drops section as display rows { left, right, line }: the top
+-- maxRows drops, with "No items" placed among them by its chance (it doesn't
+-- use up a row, and never splits a row from the grey items or container
+-- contents listed under it), then the gold line last. line is the drop line
+-- from Lines, or nil for the No items and Gold rows.
+-- Also returns the source note and whether Shift would show more.
+function Tooltip.DropSection(npcID, maxRows, expand)
+  local lines, source, expandable = Tooltip.Lines(npcID, maxRows, expand)
+  local noItems, gold = Tooltip.Extras(npcID)
+  local out = {}
+  local placed = noItems == nil
+  local function addNoItems()
+    out[#out + 1] = { "|cff9d9d9dNo items|r", "|cff9d9d9d" .. FormatPct(noItems) .. "|r", nil }
+    placed = true
+  end
+  for _, line in ipairs(lines or {}) do
+    -- Only before a top-level drop, never between a row and its children.
+    if not placed and line[3] == nil and noItems > line[2] then addNoItems() end
+    local left, right = Tooltip.LineText(line, expand)
+    out[#out + 1] = { left, right, line }
+  end
+  if not placed then addNoItems() end
+  if gold then
+    local range = gold[1] == gold[2] and ns.FormatMoney(gold[1])
+      or (ns.FormatMoney(gold[1]) .. " - " .. ns.FormatMoney(gold[2]))
+    out[#out + 1] = { "Gold  " .. range, "avg " .. ns.FormatMoney(gold[3]), nil }
+  end
+  return out, source, expandable
+end
+
 local function AddLoot(tooltip, unit)
   local db = ns.db
   if not db or not db.settings.enabled then return end
@@ -290,16 +320,11 @@ local function AddLoot(tooltip, unit)
   if not npcID then return end
   local expand = IsShiftKeyDown()
   local added = false
-  local lines, source = Tooltip.Lines(npcID, ns.TOP_N, expand)
-  local extras = Tooltip.ExtraLines(npcID)
-  if (lines and #lines > 0) or #extras > 0 then
+  local rows, source = Tooltip.DropSection(npcID, ns.TOP_N, expand)
+  if #rows > 0 then
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine("Drops", source or "1.12 estimate", GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
-    for _, line in ipairs(lines or {}) do
-      local left, right = Tooltip.LineText(line, expand)
-      tooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
-    end
-    for _, x in ipairs(extras) do tooltip:AddDoubleLine(x[1], x[2], 1, 1, 1, 1, 1, 1) end
+    for _, r in ipairs(rows) do tooltip:AddDoubleLine(r[1], r[2], 1, 1, 1, 1, 1, 1) end
     added = true
   end
 

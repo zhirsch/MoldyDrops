@@ -53,18 +53,13 @@ local window = ns.CreateSearchWindow({
     }
     local expand = IsShiftKeyDown()
     local out = {}
-    local lines, source, expandable = ns.Tooltip.Lines(r.id, ns.WINDOW_N, expand)
-    if lines and #lines > 0 then
+    local rows, source, expandable = ns.Tooltip.DropSection(r.id, ns.WINDOW_N, expand)
+    if source then
       header.source = "Source: " .. source .. ((expandable and not expand) and "  ·  hold Shift for more" or "")
-      for _, line in ipairs(lines) do
-        local left, right = ns.Tooltip.LineText(line, expand)
-        out[#out + 1] = { left, right, line }
-      end
     else
-      header.source = "No drop data for this mob yet."
+      header.source = #rows > 0 and "Source: 1.12 estimate" or "No drop data for this mob yet."
     end
-    -- "No items" chance and gold range.
-    for _, x in ipairs(ns.Tooltip.ExtraLines(r.id)) do out[#out + 1] = { x[1], x[2], nil } end
+    for _, row in ipairs(rows) do out[#out + 1] = row end
 
     -- Gathering and pick pocketing (rogues), each under its own heading.
     for _, s in ipairs(ns.Tooltip.Sections(r.id)) do
