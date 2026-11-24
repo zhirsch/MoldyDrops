@@ -570,6 +570,51 @@ check("tooltip adds loot for a hostile mob", hover(6, false) > 3)
 check("tooltip adds nothing for a friendly guard (Orgrimmar Grunt)", hover(3296, true) == 0)
 check("tooltip shows enemy-faction guards (attackable)", hover(3296, false) > 0)
 
+-- stuck tooltips: never re-show or refresh a world tooltip that's fading out
+do
+  local shows, setUnits = 0, 0
+  local oldShow, oldSetUnit, oldIsShown, oldOwner = GameTooltip.Show, GameTooltip.SetUnit, GameTooltip.IsShown, GameTooltip.GetOwner
+  GameTooltip.Show = function() shows = shows + 1 end
+  GameTooltip.SetUnit = function() setUnits = setUnits + 1 end
+  GameTooltip.IsShown = function() return true end
+  GameTooltip.GetOwner = function() return UIParent end
+  -- the tooltip still says "mouseover", but the mouse has left the mob
+  units.mouseover = nil
+  tipLines, shows = 0, 0
+  GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
+  check("fading tooltip (mouse left the mob): nothing added, not re-shown", tipLines == 0 and shows == 0)
+  -- the tooltip's unit is a nameplate that's no longer under the mouse
+  local oldGetUnit = GameTooltip.GetUnit
+  GameTooltip.GetUnit = function() return "x", "nameplate1" end
+  units.nameplate1 = { guid = guid(6, 900) }
+  units.mouseover = { guid = guid(6, 901) }
+  tipLines, shows = 0, 0
+  GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
+  check("world tooltip for a mob you're no longer pointing at: not re-shown", tipLines == 0 and shows == 0)
+  -- corpse despawned while hovering: the unit is gone
+  units.nameplate1, units.mouseover = nil, nil
+  Fire("MODIFIER_STATE_CHANGED", "LSHIFT", 1)
+  check("Shift after the corpse despawned: tooltip not refreshed", setUnits == 0)
+  GameTooltip.GetUnit = oldGetUnit
+  -- still pointing at it: Shift refreshes, and the hook shows it
+  units.mouseover = { guid = guid(6, 902) }
+  Fire("MODIFIER_STATE_CHANGED", "LSHIFT", 0)
+  check("Shift while still pointing at the mob: tooltip refreshed", setUnits == 1)
+  tipLines, shows = 0, 0
+  GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
+  check("live tooltip: loot added and shown", tipLines > 3 and shows == 1)
+  -- a unit frame's tooltip (target frame) works without a mouseover unit
+  GameTooltip.GetOwner = function() return {} end
+  GameTooltip.GetUnit = function() return "x", "target" end
+  units.mouseover, units.target = nil, { guid = guid(6, 903) }
+  tipLines, shows = 0, 0
+  GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
+  check("unit frame tooltip (target frame): loot added", tipLines > 3 and shows == 1)
+  units.target = nil
+  GameTooltip.GetUnit = oldGetUnit
+  GameTooltip.Show, GameTooltip.SetUnit, GameTooltip.IsShown, GameTooltip.GetOwner = oldShow, oldSetUnit, oldIsShown, oldOwner
+end
+
 -- /drops item opens the item search; the old name is gone
 local iw = FrameNamed("MoldyDropsItemSearchFrame")
 iw:Hide(); FrameNamed("MoldyDropsSearchFrame"):Hide()

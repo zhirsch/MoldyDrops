@@ -448,10 +448,32 @@ function Tooltip.DropSection(npcID, maxRows, expand)
   return out, source, expandable
 end
 
+-- Is this unit tooltip still for something you're pointing at? A world unit's
+-- tooltip (owned by UIParent / WorldFrame) fades out once the mouse leaves
+-- the mob or its corpse despawns; showing or refreshing it then cancels the
+-- fade and leaves it stuck on screen. Tooltips from unit frames (target,
+-- party) hide themselves when the mouse leaves the frame.
+function Tooltip.StillLive(tooltip, unit)
+  if not unit then return false end
+  local ok, live = pcall(function()
+    if not UnitExists(unit) then return false end
+    local owner = tooltip.GetOwner and tooltip:GetOwner()
+    if owner == nil or owner == UIParent or owner == WorldFrame then
+      return UnitExists("mouseover") and UnitIsUnit(unit, "mouseover")
+    end
+    return true
+  end)
+  if not ok then return false end
+  if issecretvalue and issecretvalue(live) then return false end
+  return live and true or false
+end
+
 local function AddLoot(tooltip, unit)
   local db = ns.db
   if not db or not db.settings.enabled then return end
   if not unit or UnitIsPlayer(unit) then return end
+  -- Don't touch a tooltip that's on its way out (see StillLive).
+  if not Tooltip.StillLive(tooltip, unit) then return end
   -- Guards, vendors and other NPCs you can't attack: nothing to loot.
   if UnitCanAttack then
     local canAttack = UnitCanAttack("player", unit)
@@ -498,7 +520,9 @@ local function OnModifierChanged(key)
   if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
   if GameTooltip:IsShown() then
     local _, unit = GameTooltip:GetUnit()
-    if unit and UnitExists(unit) then GameTooltip:SetUnit(unit) end
+    -- Only while you're still pointing at it: SetUnit on a fading tooltip
+    -- (mouse moved away, corpse despawned) would make it stick.
+    if Tooltip.StillLive(GameTooltip, unit) then GameTooltip:SetUnit(unit) end
   end
   if ns.RefreshSearch then ns.RefreshSearch() end
 end
