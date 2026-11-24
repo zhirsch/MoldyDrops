@@ -149,20 +149,38 @@ local shift = false
 function IsShiftKeyDown() return shift end
 local ctrl = false
 function IsControlKeyDown() return ctrl end
+local alt = false
+function IsAltKeyDown() return alt end
 function GetBuildInfo() return "1.60.1", "1", "Nov 1 2026", 16001 end
 function GetAddOnMetadata() return "0.1.0" end
 
--- ---------- load addon ----------
-local ns = {}
-for file in tostring(SRC.FILES):gmatch("[^\n]+") do
-  local chunk, err = load(SRC[file], "@" .. file)
-  if not chunk then error(err) end
-  chunk("MoldyDrops", ns)
+-- ---------- load the addons ----------
+-- Like the game: each addon's files run with its own namespace table, then
+-- its ADDON_LOADED fires. MoldyDrops loads first; the data sources depend on it.
+local spaces = {}
+for addon in tostring(SRC.ADDONS):gmatch("[^\n]+") do
+  local space = {}
+  spaces[addon] = space
+  for file in tostring(SRC[addon .. "/FILES"]):gmatch("[^\n]+") do
+    local chunk, err = load(SRC[addon .. "/" .. file], "@" .. addon .. "/" .. file)
+    if not chunk then error(err) end
+    chunk(addon, space)
+  end
+  Fire("ADDON_LOADED", addon)
 end
-Fire("ADDON_LOADED", "MoldyDrops")
+local ns = spaces.MoldyDrops              -- the addon itself
+local b112 = spaces.MoldyDrops_112        -- 1.12 data
+local cns = spaces.MoldyDrops_Community   -- community data
+-- Tests that write a source's saved data directly tell MoldyDrops, like a source would.
+local function changed() MoldyDrops.DataChanged() end
 check("no errors during startup", #errors == 0, errors[1])
-check("db initialised", MoldyDropsDB and #MoldyDropsDB.clientId == 16, MoldyDropsDB and MoldyDropsDB.clientId)
-check("base data loaded (grey row first)", ns.base[6] and ns.base[6][1] == 0 and ns.baseGrey[6][1] == 755 and ns.mobs[6][1] == "Kobold Vermin")
+check("db initialised", MoldyDropsRecorderDB and #MoldyDropsRecorderDB.clientId == 16, MoldyDropsRecorderDB and MoldyDropsRecorderDB.clientId)
+check("three data sources registered, in order", #ns.Sources.All() == 3 and ns.Sources.All()[1].id == "recorded"
+  and ns.Sources.All()[2].id == "community" and ns.Sources.All()[3].id == "1.12")
+check("the global API is there", type(MoldyDrops) == "table" and MoldyDrops.API_VERSION == 1 and MoldyDrops.RegisterSource ~= nil)
+check("core settings only in MoldyDropsDB", MoldyDropsDB.settings and MoldyDropsDB.own == nil and MoldyDropsDB.community == nil
+  and MoldyDropsDB.clientId == nil)
+check("base data loaded (grey row first)", b112.base[6] and b112.base[6][1] == 0 and b112.baseGrey[6][1] == 755 and b112.mobs[6][1] == "Kobold Vermin")
 
 local PLAYER = "Player-1-00000001"
 units.player = { guid = PLAYER }
@@ -223,17 +241,17 @@ grouped = false
 local g8 = guid(6, 8)
 Loot({ { guid = g8, item = 755, q = 0 }, { guid = g8, item = 159, name = "Refreshing Spring Water", q = 1 } })
 
-local own = MoldyDropsDB.own[6]
+local own = MoldyDropsRecorderDB.own[6]
 check("kills counted = 3 (looted, empty, looted-without-kill-event)", own and own[0] == 3, own and own[0])
 check("candle count = 2", own and own[755] == 2, own and own[755])
 check("water count = 1 (pick pocket ignored)", own and own[159] == 1, own and own[159])
 check("skinning ignored", own and own[2318] == nil)
-check("item name stored", MoldyDropsDB.items[755] and MoldyDropsDB.items[755][1] == "Melted Candle")
+check("item name stored", MoldyDropsRecorderDB.items[755] and MoldyDropsRecorderDB.items[755][1] == "Melted Candle")
 
 check("grey corpses counted", own and own[-1] == 2, own and own[-1])
 check("empty corpse counted as no items", own and own[-2] == 1, own and own[-2])
 check("gold recorded", own and own[-3] == 1 and own[-4] == 150 and own[-5] == 150 and own[-6] == 150)
-local pp = MoldyDropsDB.ownPick[6]
+local pp = MoldyDropsRecorderDB.ownPick[6]
 check("pick pocket recorded", pp and pp.kind == 5 and pp[0] == 1 and pp[159] == 1)
 
 -- no items + gold lines (1.12 data while the sample is small)
@@ -298,7 +316,7 @@ check("pick pocket section for a rogue (1.12 data)", ps and ps[3] == "1.12 estim
 playerClass = "WARRIOR"
 
 -- gathering
-local sk = MoldyDropsDB.ownGather[6]
+local sk = MoldyDropsRecorderDB.ownGather[6]
 check("skinning recorded separately", sk and sk.kind == 1 and sk[0] == 1 and sk[2318] == 1)
 local gk, grows, gnote = ns.Tooltip.Gather(113) -- Stonetusk Boar, bundled skinning data
 check("bundled skinning data", gk == 1 and grows[1] and near(grows[1][2], 60.7) and gnote == "1.12 estimate",
@@ -338,7 +356,7 @@ left = ns.Tooltip.LineText(lines[1], true, true)
 check("grey row without hint when expanded", not left:find("Shift", 1, true), left)
 
 -- containers: Murloc Coastrunner (126) drops Small Barnacled Clam (5523)
-check("clam contents bundled", ns.contents[5523] and ns.contents[5523][1] == 5503 and ns.contents[5523][2] == 100)
+check("clam contents bundled", b112.contents[5523] and b112.contents[5523][1] == 5503 and b112.contents[5523][2] == 100)
 lines = ns.Tooltip.Lines(126, 5, false)
 local clamLine
 for _, l in ipairs(lines) do if l[1] == 5523 then clamLine = l end end
@@ -360,9 +378,10 @@ check("non-container has no contents", ns.Tooltip.Contents(755) == nil)
 local gF = guid(274300, 1)
 Kill(gF, true, "Coldrasp")
 Loot({ { guid = gF, item = 99999, name = "Frosted Fang", q = 2 } })
-check("Forever mob name recorded", MoldyDropsDB.mobs[274300] and MoldyDropsDB.mobs[274300][1] == "Coldrasp")
-check("known 1.12 mob name not duplicated", MoldyDropsDB.mobs[6] == nil)
-MoldyDropsDB.own[274300] = { [0] = 4, [99999] = 1 }
+check("Forever mob name recorded", MoldyDropsRecorderDB.mobs[274300] and MoldyDropsRecorderDB.mobs[274300][1] == "Coldrasp")
+check("known 1.12 mob name not duplicated", MoldyDropsRecorderDB.mobs[6] == nil)
+MoldyDropsRecorderDB.own[274300] = { [0] = 4, [99999] = 1 }
+changed()
 rows, greys, note = ns.Tooltip.Choose(274300)
 check("no base -> small own sample", note == "you, only 4 kills" and rows[1][2] == 25, note)
 
@@ -395,11 +414,11 @@ bin = table.concat(bin)
 check("b64 all bytes", ns.Codec.Base64Decode(ns.Codec.Base64Encode(bin)) == bin)
 
 -- export
-local str, n = ns.Codec.Export(MoldyDropsDB, "0.1.0", 16001)
+local str, n = ns.Codec.Export(MoldyDropsRecorderDB, "0.1.0", 16001)
 local text = ns.Codec.Base64Decode(str:sub(6))
 log("export text:\n" .. text)
 check("export prefix", str:sub(1, 5) == "!MD1!")
-check("export header", text:match("^MD1 U " .. MoldyDropsDB.clientId .. " 1795400000 0.1.0 16001\n") ~= nil)
+check("export header", text:match("^MD1 U " .. MoldyDropsRecorderDB.clientId .. " 1795400000 0.1.0 16001\n") ~= nil)
 check("export N line with grey count", text:find("\nN 6 3 159:1 755:2 G:2 E:1 $:1:150:150:150\n", 1, true) ~= nil)
 check("export M line", text:find("\nM 274300 Coldrasp", 1, true) ~= nil)
 check("export S lines", text:find("\nS 6 1 1 2318:1\n", 1, true) ~= nil and text:find("\nS 274400 2 1 88888:1\n", 1, true) ~= nil)
@@ -418,7 +437,7 @@ check("snapshot parsed", comm and count == 3 and comm.contributors == 7, items)
 check("snapshot item", items[99999] and items[99999][1] == "Skyborne Trinket" and items[99999][2] == 3)
 check("snapshot mob names", mobs and mobs[274301] and mobs[274301][1] == "Gale Wisp")
 check("snapshot grey count", comm.npcs[6][-1] == 40 and comm.npcs[6][0] == 120)
-MoldyDropsDB.community = comm
+cns.Store(comm, items, mobs)
 rows, greys, note = ns.Tooltip.Choose(6)
 check("community preferred when sample big", note == "community, 120 kills", note)
 check("community grey row from G count", rows[1][1] == 0 and near(rows[1][2], 100 * 40 / 120), rows[1][1] .. " " .. rows[1][2])
@@ -457,21 +476,21 @@ local base = ns.MobsDropping(5465) -- Small Spider Leg, base data only
 check("item search base-only item", base[1] ~= nil and base[1].note:find("1.12 estimate", 1, true) ~= nil, base[1] and base[1].note)
 
 -- gathering in snapshots and item search
-check("snapshot S parsed, bad kind ignored", MoldyDropsDB.community.gather[113] and MoldyDropsDB.community.gather[113].kind == 1
-  and MoldyDropsDB.community.gather[113][0] == 25 and MoldyDropsDB.community.gather[5] == nil)
+check("snapshot S parsed, bad kind ignored", MoldyDropsCommunityDB.imported.gather[113] and MoldyDropsCommunityDB.imported.gather[113].kind == 1
+  and MoldyDropsCommunityDB.imported.gather[113][0] == 25 and MoldyDropsCommunityDB.imported.gather[5] == nil)
 gk, grows, gnote = ns.Tooltip.Gather(113)
 check("community skinning preferred at 20+ corpses", gk == 1 and gnote == "community, 25 corpses" and grows[1][1] == 2318 and grows[1][2] == 80,
   tostring(gnote))
 
 -- no items, gold and pick pocketing from the snapshot
-local c6 = MoldyDropsDB.community.npcs[6]
+local c6 = MoldyDropsCommunityDB.imported.npcs[6]
 check("snapshot E and $ parsed, not read as items", c6[-2] == 30 and c6[-3] == 100 and c6[-4] == 5000 and c6[-5] == 10
   and c6[-6] == 90 and c6[3] == nil and c6[30] == nil and c6[100] == nil)
 noItems, gold = ns.Tooltip.Extras(6)
 check("community no-items and gold", near(noItems, 25) and gold[1] == 10 and gold[2] == 90 and gold[3] == 50,
   tostring(noItems))
-check("snapshot pick pocket (S kind 5)", MoldyDropsDB.community.pick[38] and MoldyDropsDB.community.pick[38][0] == 25
-  and MoldyDropsDB.community.gather[38] == nil)
+check("snapshot pick pocket (S kind 5)", MoldyDropsCommunityDB.imported.pick[38] and MoldyDropsCommunityDB.imported.pick[38][0] == 25
+  and MoldyDropsCommunityDB.imported.gather[38] == nil)
 playerClass = "ROGUE"
 local _, prow, pnote = ns.Tooltip.Pick(38)
 check("community pick pocket preferred at 20+", pnote == "community, 25 mobs" and prow[1][1] == 5363 and prow[1][2] == 40, pnote)
@@ -620,6 +639,46 @@ do
   GameTooltip.Show, GameTooltip.SetUnit, GameTooltip.IsShown, GameTooltip.GetOwner = oldShow, oldSetUnit, oldIsShown, oldOwner
 end
 
+-- "only while a key is held": nothing until Ctrl (the default) or the chosen key is down
+do
+  local s = MoldyDropsDB.settings
+  check("modifier option is off by default, key Ctrl", not s.requireModifier and s.modifierKey == "CTRL")
+  SlashCmdList.MOLDYDROPS("modifier")
+  check("/drops modifier turns it on with Ctrl", s.requireModifier == true and s.modifierKey == "CTRL")
+  ctrl = false
+  check("Ctrl up: no drops in the tooltip", hover(6, false) == 0)
+  ctrl = true
+  check("Ctrl held: drops shown", hover(6, false) > 3)
+  ctrl = false
+  shift = true
+  check("Shift alone doesn't count as the key", hover(6, false) == 0)
+  shift = false
+  SlashCmdList.MOLDYDROPS("modifier alt")
+  check("/drops modifier alt picks Alt", s.requireModifier and s.modifierKey == "ALT")
+  ctrl = true
+  check("with Alt chosen, Ctrl doesn't show them", hover(6, false) == 0)
+  ctrl, alt = false, true
+  check("Alt held: drops shown", hover(6, false) > 3)
+  alt = false
+  -- pressing or releasing the key redraws the tooltip you're pointing at
+  local setUnits = 0
+  local oldSetUnit, oldIsShown, oldOwner = GameTooltip.SetUnit, GameTooltip.IsShown, GameTooltip.GetOwner
+  GameTooltip.SetUnit = function() setUnits = setUnits + 1 end
+  GameTooltip.IsShown = function() return true end
+  GameTooltip.GetOwner = function() return UIParent end
+  units.mouseover = { guid = guid(6, 904) }
+  Fire("MODIFIER_STATE_CHANGED", "LALT", 1)
+  Fire("MODIFIER_STATE_CHANGED", "RALT", 0)
+  check("pressing and releasing the key refreshes the tooltip", setUnits == 2, setUnits)
+  Fire("MODIFIER_STATE_CHANGED", "LCTRL", 1)
+  check("a key that isn't the chosen one doesn't", setUnits == 2, setUnits)
+  units.mouseover = nil
+  GameTooltip.SetUnit, GameTooltip.IsShown, GameTooltip.GetOwner = oldSetUnit, oldIsShown, oldOwner
+  SlashCmdList.MOLDYDROPS("modifier off")
+  check("/drops modifier off: always shown again", not s.requireModifier and hover(6, false) > 3)
+  s.modifierKey = "CTRL"
+end
+
 -- /drops item opens the item search; the old name is gone
 local iw = FrameNamed("MoldyDropsItemSearchFrame")
 iw:Hide(); FrameNamed("MoldyDropsSearchFrame"):Hide()
@@ -658,6 +717,7 @@ check("/drops s still searches just the rest", searched == "kobold", searched)
 ns.ShowSearch = realShow
 
 -- Shift while the search box has the cursor (the game doesn't see the key)
+do
 ns.ShowSearch("kobold vermin", 6)
 local sbw = FrameNamed("MoldyDropsSearchFrame")
 local function shownKinds()
@@ -700,8 +760,10 @@ shift = false
 ns.ShowSearch("kobold vermin", 6)
 check("no detail scrollbar when everything fits", not sbw.detailBar.shown)
 sbw:Hide()
+end
 
 -- hover: item tooltip in the item list; 3D model for mobs
+do
 ns.ShowModelPreview(6) -- build the panel so its model can be watched
 local preview = FrameNamed("MoldyDropsModelPreview")
 local modelArgs
@@ -748,9 +810,10 @@ ns.ShowSearch("azuregos")
 mwin.buttons[1].OnEnter(mwin.buttons[1])
 mwin:Hide()
 check("closing the window hides the model", not preview.shown)
+end
 
 -- search window rows stay on one line (long text is cut off with "..." instead of wrapping)
-local sw = tostring(SRC["SearchWindow.lua"])
+local sw = tostring(SRC["MoldyDrops/SearchWindow.lua"])
 check("list and detail rows don't wrap", sw:find("b.text:SetWordWrap(false)", 1, true) ~= nil
   and sw:find("row.name:SetWordWrap(false)", 1, true) ~= nil)
 
@@ -862,10 +925,10 @@ end
 local g660 = guid(660, 1)
 Kill(g660, true, "Bloodscalp Witch Doctor")
 Loot({ { guid = g660, item = 4338, name = "Mageweave Cloth", q = 1, qty = 3 } })
-check("recorded stack size", MoldyDropsDB.own[660] and MoldyDropsDB.own[660].q and MoldyDropsDB.own[660].q[4338][2] == 3)
+check("recorded stack size", MoldyDropsRecorderDB.own[660] and MoldyDropsRecorderDB.own[660].q and MoldyDropsRecorderDB.own[660].q[4338][2] == 3)
 qmin, qmax = ns.Tooltip.Qty("drop", 660, 4338)
 check("recorded count wins over 1.12", qmin == 3 and qmax == 3)
-check("recorded count tally", MoldyDropsDB.own[660].c and MoldyDropsDB.own[660].c[4338][3] == 1)
+check("recorded count tally", MoldyDropsRecorderDB.own[660].c and MoldyDropsRecorderDB.own[660].c[4338][3] == 1)
 for n = 2, 3 do
   local g = guid(660, n)
   Kill(g, true, "Bloodscalp Witch Doctor")
@@ -878,7 +941,7 @@ do
 end
 local stats, _ = pcall(SlashCmdList.MOLDYDROPS, "stats")
 check("stats still works with counts recorded", stats)
-local str2 = ns.Codec.Export(MoldyDropsDB, "0.1.0", 16001)
+local str2 = ns.Codec.Export(MoldyDropsRecorderDB, "0.1.0", 16001)
 local text2 = ns.Codec.Base64Decode(str2:sub(6))
 check("export Q token", text2:find("Q:4338:1:3", 1, true) ~= nil, text2:match("N 660[^\n]*"))
 check("export C tokens", text2:find("C:4338:1:2 C:4338:3:1", 1, true) ~= nil, text2:match("N 660[^\n]*"))
@@ -964,10 +1027,10 @@ now = now + 10
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "x", 8613)
 Loot({ { guid = guid(113, 6), item = 2318, name = "Light Leather", q = 1, qty = 2 } })
 do
-  local sk = MoldyDropsDB.ownGather[113]
+  local sk = MoldyDropsRecorderDB.ownGather[113]
   check("skinning a stack of 2 is tallied in the gathering record (not the drops)",
     sk and sk.c and sk.c[2318] and sk.c[2318][2] == 1 and sk.c[2318][1] == 1 and sk.q[2318][2] == 2
-    and not (MoldyDropsDB.own[113] and MoldyDropsDB.own[113].c and MoldyDropsDB.own[113].c[2318]),
+    and not (MoldyDropsRecorderDB.own[113] and MoldyDropsRecorderDB.own[113].c and MoldyDropsRecorderDB.own[113].c[2318]),
     sk and sk.c and sk.c[2318] and tostring(sk.c[2318][1]) .. "/" .. tostring(sk.c[2318][2]))
   local gc = ns.Tooltip.CountChances("gather", 113, 2318, 100)
   check("gathering count chances use the recorded tally", gc and #gc == 2 and gc[1][2] == 50 and gc[2][2] == 50)
@@ -988,7 +1051,7 @@ Fire("LOOT_READY")
 chatLoot(2672, "Stringy Wolf Meat")
 Fire("LOOT_CLOSED")
 units.target = nil
-local w = MoldyDropsDB.own[299]
+local w = MoldyDropsRecorderDB.own[299]
 check("emptied window: kill credited to your dead target", w and w[0] == 1, w and w[0])
 check("emptied window: item picked up from the loot chat line", w and w[2672] == 1)
 check("emptied window: not counted as no items", w and (w[-2] or 0) == 0)
@@ -1028,8 +1091,8 @@ local function has(list, id)
   for i = 1, #(list or {}) - 1, 2 do if list[i] == id then return true end end
   return false
 end
-check("1.12 data has no quest-only drops (Tough Wolf Meat)", not has(ns.base[299], 750))
-check("quest-class items that drop for everyone stay (Captain Sander's Treasure Map)", has(ns.base[127], 1357))
+check("1.12 data has no quest-only drops (Tough Wolf Meat)", not has(b112.base[299], 750))
+check("quest-class items that drop for everyone stay (Captain Sander's Treasure Map)", has(b112.base[127], 1357))
 local gQ = guid(299, 50)
 local meatBefore = w[2672]
 Loot({ { guid = gQ, item = 2672, name = "Stringy Wolf Meat", q = 1 },
@@ -1044,22 +1107,24 @@ Fire("LOOT_CLOSED")
 units.target = nil
 check("quest item (from chat) not recorded", w[884] == nil)
 check("corpse with only quest items counts as no items", w[-2] == 2, w[-2])
-MoldyDropsDB.own[999001] = { [0] = 30, [884] = 10, [2589] = 6 } -- recorded before this change
+MoldyDropsRecorderDB.own[999001] = { [0] = 30, [884] = 10, [2589] = 6 } -- recorded before this change
+changed()
 local qrows = ns.Tooltip.Choose(999001)
 local hasRib = false
 for _, r in ipairs(qrows) do if r[1] == 884 then hasRib = true end end
 check("quest items already recorded are hidden", not hasRib and qrows[1] and qrows[1][1] == 2589)
-MoldyDropsDB.own[999001] = nil
+MoldyDropsRecorderDB.own[999001] = nil
+changed()
 -- Quest-class items that drop for everyone stay (Gorilla Fang, Mistvale Gorilla)
-check("Gorilla Fang is in the 1.12 data", has(ns.base[1108], 2799))
+check("Gorilla Fang is in the 1.12 data", has(b112.base[1108], 2799))
 check("Gorilla Fang isn't a quest item, even with the loot window's flag",
   not ns.IsQuestItem(2799) and not ns.IsQuestItem(2799, true))
 itemClass[2799] = 12
 local gG = guid(1108, 60)
-local fangBefore = (MoldyDropsDB.own[1108] or {})[2799] or 0
+local fangBefore = (MoldyDropsRecorderDB.own[1108] or {})[2799] or 0
 Loot({ { guid = gG, item = 2799, name = "Gorilla Fang", q = 1, quest = true } })
-check("Gorilla Fang is recorded", MoldyDropsDB.own[1108] and MoldyDropsDB.own[1108][2799] == fangBefore + 1)
-local quest1 = next(ns.questOnly)
+check("Gorilla Fang is recorded", MoldyDropsRecorderDB.own[1108] and MoldyDropsRecorderDB.own[1108][2799] == fangBefore + 1)
+local quest1 = next(b112.questOnly)
 check("items that only drop on a quest are quest items", quest1 and ns.IsQuestItem(quest1))
 
 -- quest drops: their own section, only while a quest needs the item
@@ -1072,12 +1137,12 @@ local function questRows(npcID)
   for _, s in ipairs(ns.Tooltip.Sections(npcID)) do if s[1] == ns.QUEST then return s[2] end end
 end
 check("1.12 quest drop: Young Wolf gives Tough Wolf Meat 80% (quest 33)",
-  has(ns.questDrops[299], 750) and ns.questDrops[299][2] == 80 and ns.questFor[750][1] == 33)
+  has(b112.questDrops[299], 750) and b112.questDrops[299][2] == 80 and b112.questFor[750][1] == 33)
 check("no quest section when not on the quest", questRows(299) == nil, table.concat(sectionKinds(299), ","))
 questLog[33] = { objectives = { { text = "Tough Wolf Meat: 3/8", type = "item", finished = false } } }
 local qr = questRows(299)
 check("quest section while the quest needs it", qr and qr[1][1] == 750 and qr[1][2] == 80)
-check("quest drops stay out of the normal drops", not has(ns.base[299], 750))
+check("quest drops stay out of the normal drops", not has(b112.base[299], 750))
 local _, _, qnote = ns.Tooltip.Quest(299)
 check("quest section says it's per kill while on the quest", qnote:find("quest"))
 questLog[33].objectives[1].finished = true
@@ -1098,7 +1163,7 @@ questLog[33] = nil
 ns.BuildDropIndex()
 check("item search hides quest drops you don't need", #ns.MobsDropping(750) == 0)
 local rareQ, rareNpc
-for npc, list in pairs(ns.questDrops) do
+for npc, list in pairs(b112.questDrops) do
   for i = 1, #list - 1, 2 do if list[i + 1] < 5 then rareNpc, rareQ = npc, list[i] break end end
   if rareQ then break end
 end
@@ -1107,14 +1172,24 @@ check("luck tag uses the quest chance", rareQ and ns.LuckTag(rareQ) ~= nil, tost
 ns.lootContext = nil
 
 -- options (AceConfig): registered in the game's settings, opened by /drops options
+do
 check("options table registered with AceConfig", type(aceRegistered.MoldyDrops) == "function")
-check("options added to the game's AddOns settings", aceBlizAdded == "MoldyDrops")
+check("options added to the game's AddOns settings", aceBlizAdded == ns.BRAND)
 SlashCmdList.MOLDYDROPS("options")
 check("/drops options opens the game's options at MoldyDrops", openedCategory == 42, openedCategory)
 local opts = aceRegistered.MoldyDrops()
 local a = opts.args
 check("options include every setting", a.enabled and a.instances and a.luck and a.debug and a.topN
-  and a.topN.type == "range" and a.topN.min == 1 and a.topN.max == 10 and a.topN.step == 1)
+  and a.topN.type == "range" and a.topN.min == 1 and a.topN.max == 10 and a.topN.step == 1
+  and a.requireModifier and a.modifierKey)
+check("key choice: Ctrl by default, greyed out while the option is off",
+  a.modifierKey.get() == "CTRL" and a.modifierKey.disabled() == true and a.modifierKey.values.ALT == "Alt")
+a.requireModifier.set(nil, true)
+a.modifierKey.set(nil, "ALT")
+check("options set the key option", MoldyDropsDB.settings.requireModifier and MoldyDropsDB.settings.modifierKey == "ALT"
+  and not a.modifierKey.disabled())
+a.requireModifier.set(nil, false)
+a.modifierKey.set(nil, "CTRL")
 local function dropItemRows(npcID)
   local n = 0
   for _, r in ipairs(ns.Tooltip.DropSection(npcID, ns.TopN(), false)) do
@@ -1159,13 +1234,214 @@ check("search window shows every drop even with the tooltip set to 2", allDrops 
 check("while the tooltip shows 2", dropItemRows(7044) == 2)
 MoldyDropsDB.settings.topN = 5
 sw2:Hide()
+end
+
+-- data sources: choose them in the options; each mob uses one source, never a mix
+do
+  local S = ns.Sources
+  local function note(npcID) return select(3, ns.Tooltip.Choose(npcID)) end
+  check("with every source on, Kobold Vermin uses the community data", note(6) == "community, 120 kills", note(6))
+  local opts2 = aceRegistered.MoldyDrops().args
+  local toggle = opts2.source_community and opts2.source_community.args.enabled
+  check("options list each source with a toggle", toggle and opts2.source_recorded and opts2.source_1_12
+    and toggle.name == "Community data" and toggle.get() == true)
+  check("sources can add options (the recorder's Export and Import buttons)",
+    opts2.source_recorded.args.src_export.type == "execute" and opts2.source_recorded.args.src_import.type == "execute"
+    and opts2.source_community.args.src_import == nil)
+  toggle.set(nil, false)
+  check("turning the community data off is saved", MoldyDropsDB.settings.sources.community == false and not S.IsEnabled("community"))
+  check("community off: the 1.12 estimate is used, with your small sample noted", note(6):find("^1.12 estimate %(you: %d+ kills%)") ~= nil, note(6))
+  check("community off: its gathering numbers go too", select(3, ns.Tooltip.Gather(113)) == "1.12 estimate (you: 2 corpses)",
+    select(3, ns.Tooltip.Gather(113)))
+  ns.BuildDropIndex()
+  local v
+  for _, m in ipairs(ns.MobsDropping(755)) do if m.id == 6 then v = m end end
+  check("item search follows the sources too", v and v.note:find("1.12 estimate", 1, true), v and v.note)
+  S.SetEnabled("1.12", false)
+  check("1.12 off as well: your own kills, flagged as a small sample", note(6):find("^you, only") ~= nil, note(6))
+  check("names still come from the 1.12 data while it's off", ns.MobInfo(6) == "Kobold Vermin" and ns.ItemInfo(755) == "Melted Candle")
+  S.SetEnabled("recorded", false)
+  check("every source off: no drops at all", ns.Tooltip.Choose(6) == nil and #ns.Tooltip.Sections(113) == 0)
+  check("and nothing added to the tooltip", hover(6, false) == 0)
+  for _, id in ipairs({ "community", "1.12", "recorded" }) do S.SetEnabled(id, true) end
+  check("all back on", note(6) == "community, 120 kills" and next(MoldyDropsDB.settings.sources) == nil, note(6))
+
+  -- luck tags don't depend on your own loot being a source
+  S.SetEnabled("recorded", false)
+  Loot({ { guid = guid(38, 70), item = 805, name = "Small Red Pouch", q = 1 } })
+  local _, lucky = chatFilters.CHAT_MSG_LOOT(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(805, "Small Red Pouch") .. ".")
+  check("luck tags work with Your loot turned off", lucky and lucky:find("Incredibly lucky", 1, true), lucky)
+  S.SetEnabled("recorded", true)
+
+  -- anything can be a data source
+  local calls = 0
+  local custom = MoldyDrops.RegisterSource({
+    id = "test.custom", name = "Test estimates", label = "test data", order = 5,
+    Drops = function(self, npcID)
+      calls = calls + 1
+      if npcID == 6 then
+        return { items = { [159] = 12.5, [4536] = 40 }, greys = { [755] = 25 }, noItems = 10, gold = { 5, 15 },
+          qty = { [4536] = { 1, 3 } } }
+      end
+    end,
+    Contents = function(self, itemID) if itemID == 4536 then return { items = { [159] = 50 } } end end,
+    MobInfo = function(self, npcID) if npcID == 900001 then return "Test Mob", 7, 9 end end,
+    Npcs = function(self, section) if section == "mob" then return { [900001] = true } end end,
+  })
+  check("a third-party source registers and comes first by its order", custom and ns.Sources.All()[1].id == "test.custom")
+  check("its options toggle appears", aceRegistered.MoldyDrops().args["source_test_custom"] ~= nil)
+  S.SetEnabled("community", false)
+  local r, g, n = ns.Tooltip.Choose(6)
+  check("an estimate source ahead of 1.12 is used instead of it", n:find("^test data") ~= nil, n)
+  check("its rows: items best first, its grey list folded into a grey row", r[1][1] == 4536 and near(r[1][2], 40)
+    and g[1][1] == 755 and (function() for _, x in ipairs(r) do if x[1] == ns.GREY then return near(x[2], 25) end end end)())
+  local ni, gold = ns.Tooltip.Extras(6)
+  check("its no items and gold (avg filled in)", ni == 10 and gold[1] == 5 and gold[2] == 15 and gold[3] == 10)
+  local qlo, qhi = ns.Tooltip.Qty("drop", 6, 4536)
+  check("its stack counts", qlo == 1 and qhi == 3)
+  check("its container contents", ns.Tooltip.Contents(4536) and ns.Tooltip.Contents(4536)[1][1] == 159)
+  check("its mobs are searchable, with levels", (ns.SearchMobs("test mob")[1] or {}).id == 900001
+    and ns.SearchMobs("test mob")[1].minL == 7)
+  local before = calls
+  ns.Tooltip.Choose(6); ns.Tooltip.Choose(6)
+  check("entries are cached between lookups", calls == before)
+  MoldyDrops.DataChanged()
+  ns.Tooltip.Choose(6)
+  check("DataChanged rebuilds them", calls == before + 1)
+  S.SetEnabled("community", true)
+  check("recorded data with enough kills still beats any estimate", select(3, ns.Tooltip.Choose(6)) == "community, 120 kills")
+
+  -- a broken source can't break the tooltip
+  local nerr = #errors
+  MoldyDrops.RegisterSource({ id = "test.broken", name = "Broken", order = 1, observed = true,
+    Drops = function() error("boom") end, ItemInfo = function() error("bang") end })
+  check("a source that errors is skipped", select(3, ns.Tooltip.Choose(6)) == "community, 120 kills" and ns.ItemInfo(755) == "Melted Candle")
+  ns.Tooltip.Choose(30); ns.Tooltip.Choose(38)
+  check("and reported once per method, not on every lookup", #errors == nerr + 2, #errors - nerr)
+  check("tooltip still works", hover(6, false) > 3)
+  local okDup, errDup = pcall(MoldyDrops.RegisterSource, { id = "community", name = "again" })
+  check("a second source with the same id is refused", not okDup and tostring(errDup):find("already registered", 1, true), errDup)
+  local okBad = pcall(MoldyDrops.RegisterSource, { id = "bad", Drops = "not a function" })
+  check("a source whose methods aren't functions is refused", not okBad)
+  check("an id is required", not pcall(MoldyDrops.RegisterSource, { name = "no id" }))
+  -- turn the test sources off so the rest of the tests see the bundled ones
+  S.SetEnabled("test.custom", false)
+  S.SetEnabled("test.broken", false)
+end
+
+-- import: the window fills the community data
+do
+  local iwin = nil
+  ns.ShowImport()
+  iwin = FrameNamed("MoldyDropsExportFrame")
+  local snapIn = "!MD1!" .. js.global:btoa("MD1 S 1795400000 9\nN 6 150 755:45 G:50\nM 274302 Ice Wisp\n")
+  iwin.edit.GetText = function() return snapIn end
+  iwin.button.OnClick(iwin.button)
+  check("the recorder's import window fills the community data", MoldyDropsCommunityDB.imported.contributors == 9
+    and MoldyDropsCommunityDB.imported.npcs[6][0] == 150 and select(3, ns.Tooltip.Choose(6)) == "community, 150 kills"
+    and MoldyDropsCommunityDB.imported.mobs[274302][1] == "Ice Wisp", MoldyDropsCommunityDB.imported.contributors)
+  check("and your recordings are kept", next(MoldyDropsRecorderDB.own) ~= nil)
+  -- without MoldyDrops_Community there's nowhere to put it
+  local realImport = cns.source.Import
+  cns.source.Import = nil
+  iwin.shown = true
+  iwin.status.SetText = function(_, s) iwin.statusText = s end
+  iwin.button.OnClick(iwin.button)
+  check("import without the community addon says so", iwin.shown and tostring(iwin.statusText):find("MoldyDrops_Community", 1, true),
+    iwin.statusText)
+  cns.source.Import = realImport
+  iwin:Hide()
+  -- "Record my loot" off: nothing new is recorded, what's there stays
+  check("recording is on by default", MoldyDropsDB.settings.record == true)
+  SlashCmdList.MOLDYDROPS("record")
+  check("/drops record turns it off", MoldyDropsDB.settings.record == false)
+  local wolf = MoldyDropsRecorderDB.own[299]
+  local kills0 = wolf[0]
+  local gOff = guid(299, 80)
+  Kill(gOff, false)
+  Loot({ { guid = guid(299, 81), item = 2672, name = "Stringy Wolf Meat", q = 1 } })
+  now = now + 10
+  Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "x", 8613)
+  local skins0 = (MoldyDropsRecorderDB.ownGather[113] or {})[0]
+  Loot({ { guid = guid(113, 82), item = 2318, name = "Light Leather", q = 1 } })
+  now = now + 10
+  check("recording off: kills, loot and skinning aren't recorded", wolf[0] == kills0
+    and (MoldyDropsRecorderDB.ownGather[113] or {})[0] == skins0, wolf[0] .. " " .. kills0)
+  check("recording off: your recordings are kept and still used", next(MoldyDropsRecorderDB.own) ~= nil
+    and ns.Sources.IsEnabled("recorded"))
+  local recOpt = aceRegistered.MoldyDrops().args.record
+  check("the option shows it", recOpt and recOpt.get() == false)
+  recOpt.set(nil, true)
+  check("and turns it back on", MoldyDropsDB.settings.record == true)
+  check("export, import and reset are always there", ns.commands.export and ns.commands.import and ns.commands.reset)
+end
+
+-- the community addon bundles a snapshot; the newer of it and an import is used
+do
+  local fx = tostring(js.global.SRC.SERVER_SNAPSHOT) -- generated 1800000000, after the imports above (1795400000)
+  local before = MoldyDropsCommunityDB.imported
+  local function cnote() return select(3, ns.Tooltip.Choose(6)) end
+  check("before: the imported snapshot is used", cns.Active() == before and cnote() == "community, 150 kills", cnote())
+  cns.SNAPSHOT = fx
+  cns.Reload()
+  check("a newer bundled snapshot wins over an older import", cns.Active().bundled and cns.Active().contributors == 2
+    and cnote():find("^1.12 estimate %(community: 10 kills%)") ~= nil, cnote())
+  check("and the older import is dropped", MoldyDropsCommunityDB.imported == nil)
+  check("mob names from the bundled snapshot", cns.source:MobInfo(274300) == "Coldrasp")
+  local older = "!MD1!" .. js.global:btoa("MD1 S 1795400000 4\nN 6 99 755:9\n")
+  local printed = #out
+  MoldyDrops.ImportSnapshot(ns.Codec.ParseSnapshot(older))
+  local said = false
+  for i = printed + 1, #out do if out[i]:find("older than the one this addon came with", 1, true) then said = true end end
+  check("importing an older snapshot than the bundled one is refused, with a message", said and cns.Active().bundled
+    and MoldyDropsCommunityDB.imported == nil)
+  local newer = "!MD1!" .. js.global:btoa("MD1 S 1900000000 12\nN 6 400 755:120 G:150\n")
+  MoldyDrops.ImportSnapshot(ns.Codec.ParseSnapshot(newer))
+  check("importing a newer one replaces the bundled one", not cns.Active().bundled and cns.Active().contributors == 12
+    and cnote() == "community, 400 kills" and MoldyDropsCommunityDB.imported.generatedAt == 1900000000, cnote())
+  cns.Reload()
+  check("and still wins after a reload", not cns.Active().bundled and cnote() == "community, 400 kills")
+  cns.SNAPSHOT = "!MD1!not a snapshot"
+  MoldyDropsCommunityDB.imported = nil
+  cns.Reload()
+  local nerr = #errors
+  check("a damaged bundled snapshot is reported, and there's no community data", cns.Active() == nil and #errors == nerr + 1,
+    errors[#errors])
+  -- back to the state the rest of the tests expect
+  cns.SNAPSHOT = nil
+  MoldyDropsCommunityDB.imported = before
+  cns.Reload()
+  check("restored", cnote() == "community, 150 kills", cnote())
+end
+
+-- "MoldyDrops" with "Moldy" in purple
+check("brand: Moldy purple, Drops plain", ns.BRAND == "|cffa335eeMoldy|rDrops" and MoldyDrops.BRAND == ns.BRAND)
+check("chat prefix: purple Moldy, gold Drops", ns.PREFIX == "|cffa335eeMoldy|r|cffffd100Drops:|r ")
+check("options panel named with the brand", aceRegistered.MoldyDrops().name == ns.BRAND)
+do
+  local printed
+  local realPrint = print
+  print = function(s) printed = s end
+  ns.Print("hi")
+  print = realPrint
+  check("chat messages start with the brand", printed == ns.PREFIX .. "hi", printed)
+end
+check("commands from the data sources are in /drops help", (function()
+  local before = #out
+  SlashCmdList.MOLDYDROPS("help")
+  local found = { export = false, import = false, reset = false }
+  for i = before + 1, #out do
+    for k in pairs(found) do if out[i]:find("/drops " .. k, 1, true) then found[k] = true end end
+  end
+  return found.export and found.import and found.reset
+end)())
 
 -- reset clears everything you recorded (last, since it wipes the test data)
 SlashCmdList.MOLDYDROPS("reset")
-check("reset without confirm keeps data", next(MoldyDropsDB.own) ~= nil)
+check("reset without confirm keeps data", next(MoldyDropsRecorderDB.own) ~= nil)
 SlashCmdList.MOLDYDROPS("reset confirm")
 check("reset confirm clears drops, gathering and pick pocketing",
-  next(MoldyDropsDB.own) == nil and next(MoldyDropsDB.ownGather) == nil and next(MoldyDropsDB.ownPick) == nil)
+  next(MoldyDropsRecorderDB.own) == nil and next(MoldyDropsRecorderDB.ownGather) == nil and next(MoldyDropsRecorderDB.ownPick) == nil)
 
 log(("%d failures"):format(fails))
 return table.concat(out, "\n")

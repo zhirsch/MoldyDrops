@@ -4,11 +4,10 @@ local _, ns = ...
 -- give the selected item on the right (drops, gathering, pick pocketing for
 -- rogues, and inside containers they drop), highest chance first.
 --
--- The chances are the ones the tooltip would show for each mob (observed
--- rates once there are enough kills, otherwise the 1.12 estimate). The bundled
--- 1.12 data keeps only each mob's top 10 drops (and top 10 grey items), so
--- very rare drops, like world drops spread across hundreds of mobs, may be
--- missing from this list.
+-- The chances are the ones the tooltip would show for each mob, from the data
+-- sources that are turned on. The bundled 1.12 data keeps only each mob's top
+-- 10 drops (and top 10 grey items), so very rare drops, like world drops
+-- spread across hundreds of mobs, may be missing from this list.
 
 local index -- [itemID] = { { npcID, percent, note, gatherKind, viaContainerID }, ... }
 
@@ -46,17 +45,15 @@ function ns.BuildDropIndex()
     if not kind then return end
     for _, r in ipairs(rows) do put(r[1], npcID, r[2], note, kind) end
   end
-  for id in pairs(ns.base or {}) do add(id) end
-  for id in pairs(ns.db.own) do add(id) end
-  for id in pairs(ns.db.community.npcs or {}) do add(id) end
-  for id in pairs(ns.gather or {}) do addGather(id) end
-  for id in pairs(ns.db.ownGather) do addGather(id) end
-  for id in pairs(ns.db.community.gather or {}) do addGather(id) end
+  -- Every mob the sources that are turned on have data for.
+  local Sources = ns.Sources
+  Sources.EachNpc("drop", true, add)
+  Sources.EachNpc("gather", true, addGather)
   -- Quest drops, while one of your quests needs them.
-  for id in pairs(ns.questDrops or {}) do
+  Sources.EachNpc("quest", true, function(id)
     local kind, rows, note = ns.Tooltip.Quest(id)
     for _, r in ipairs(rows or {}) do put(r[1], id, r[2], note, kind) end
-  end
+  end)
   -- Pick pocketing, for rogues.
   if ns.IsRogue() then
     local seenPick = {}
@@ -67,12 +64,13 @@ function ns.BuildDropIndex()
       if not kind then return end
       for _, r in ipairs(rows) do put(r[1], npcID, r[2], note, kind) end
     end
-    for id in pairs(ns.pick or {}) do addPick(id) end
-    for id in pairs(ns.db.ownPick) do addPick(id) end
-    for id in pairs(ns.db.community.pick or {}) do addPick(id) end
+    Sources.EachNpc("pick", true, addPick)
   end
   return index
 end
+
+-- A source's data changed: rebuild the index when it's next needed.
+function ns.InvalidateDropIndex() index = nil end
 
 -- Items whose names contain the query and that some mob drops.
 function ns.SearchItems(query)
@@ -122,7 +120,7 @@ end
 
 local window = ns.CreateSearchWindow({
   name = "MoldyDropsItemSearchFrame",
-  title = "MoldyDrops: Search items",
+  title = ns.BRAND .. ": Search items",
   noun = "item",
   onOpen = function() ns.BuildDropIndex() end, -- pick up new recordings and imports
   search = ns.SearchItems,
@@ -161,7 +159,7 @@ local window = ns.CreateSearchWindow({
     end
     if m.via then
       GameTooltip:AddLine("Comes inside " .. ns.ItemInfo(m.via) .. ". The chance includes getting the container"
-        .. " (container chance from the source below, contents from 1.12 data).", 1, 1, 1, true)
+        .. " (container chance from the source below).", 1, 1, 1, true)
     end
     GameTooltip:AddLine("Source: " .. (m.note or "?"), 0.6, 0.6, 0.6)
     GameTooltip:AddLine("Ctrl+click to see all its drops.", 0.6, 0.6, 0.6)

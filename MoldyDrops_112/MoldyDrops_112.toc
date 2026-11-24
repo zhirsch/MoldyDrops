@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: |cffa335eeMoldy|rDrops - 1.12 data
+## Notes: Data source for MoldyDrops: drop chances from the original 1.12 game (CMaNGOS classic-db), used until there's enough recorded data.
+## Version: @project-version@
+## X-License: GPL-3.0-or-later
+## Dependencies: MoldyDrops
+
+BaseData.lua
+Source.lua

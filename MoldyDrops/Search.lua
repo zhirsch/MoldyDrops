@@ -20,10 +20,9 @@ function ns.SearchMobs(query)
     local rank = (lower == query and 0) or (pos == 1 and 1) or 2
     results[#results + 1] = { id = npcID, name = name, minL = minL, maxL = maxL, rank = rank }
   end
-  for id in pairs(ns.mobs or {}) do consider(id) end
-  for id in pairs(ns.db.mobs) do consider(id) end
-  for id in pairs(ns.db.own) do consider(id) end
-  for id in pairs(ns.db.community.npcs or {}) do consider(id) end
+  -- Every mob any installed source can name or has drops for.
+  ns.Sources.EachNpc("mob", false, consider)
+  ns.Sources.EachNpc("drop", false, consider)
   table.sort(results, function(a, b)
     if a.rank ~= b.rank then return a.rank < b.rank end
     if a.name ~= b.name then return a.name < b.name end
@@ -41,7 +40,7 @@ end
 
 local window = ns.CreateSearchWindow({
   name = "MoldyDropsSearchFrame",
-  title = "MoldyDrops: Search mobs",
+  title = ns.BRAND .. ": Search mobs",
   noun = "mob",
   search = ns.SearchMobs,
   listText = function(r) return r.name, ns.LevelRange(r.minL, r.maxL) end,
@@ -77,7 +76,8 @@ local window = ns.CreateSearchWindow({
     if source then
       header.source = "Source: " .. source .. hint
     else
-      header.source = (#rows > 0 and "Source: 1.12 estimate" or "No drop data for this mob yet.") .. hint
+      header.source = (#ns.Sources.Enabled() == 0 and "No data sources turned on (/drops options)."
+        or "No drop data for this mob yet.") .. hint
     end
     return header, out
   end,
@@ -92,7 +92,7 @@ local window = ns.CreateSearchWindow({
         GameTooltip:AddLine(("Chance of exactly %d."):format(line[5])
           .. " Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6, true)
       elseif kind == "content" then
-        GameTooltip:AddLine("Chance per container opened, from 1.12 data. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine("Chance per container opened. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
       elseif kind == "gather" then
         GameTooltip:AddLine("Chance per corpse gathered. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
       elseif kind == "pick" then

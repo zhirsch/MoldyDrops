@@ -1,0 +1,19 @@
+# BigWigs packager (https://github.com/BigWigsMods/packager): builds MoldyDrops-<version>.zip
+# with MoldyDrops and MoldyDrops_112 side by side, ready to unzip into Interface\AddOns.
+# MoldyDrops_Community is released from its own repository.
+# Run by .github/workflows/release.yml when a tag is pushed.
+package-as: MoldyDrops
+
+# The repo holds each addon in its own folder; the package's root is the
+# MoldyDrops folder, so the core moves onto it and the 1.12 data next to it.
+move-folders:
+  MoldyDrops/MoldyDrops: MoldyDrops
+  MoldyDrops/MoldyDrops_112: MoldyDrops_112
+
+# Not part of the addon (paths are relative to the repo root).
+ignore:
+  - docs
+  - server
+  - tests
+  - tools
+  - README.md

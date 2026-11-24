@@ -102,7 +102,32 @@ local function StripTokens(rest, e)
   return (rest:gsub("%$:[%d:]+", ""):gsub("Q:[%d:]+", ""):gsub("C:[%d:]+", ""))
 end
 
--- Builds the upload string from this install's own recorded loot.
+-- Turns a counted record into a data source entry (see docs/data-sources.md).
+-- A counted record is what the recorder keeps and what a snapshot's N and S
+-- records parse into: [0] = kills (or corpses gathered, mobs pick pocketed),
+-- [itemID] = how many of those gave the item, [-1] = corpses with any grey
+-- item, [-2] = corpses with no items, [-3] / [-4] / [-5] / [-6] = corpses
+-- with gold / total / min / max copper, .kind (gathering 1-5), .q[itemID] =
+-- { min, max } count, .c[itemID][count] = how often exactly that many came.
+function Codec.Rates(e)
+  local n = type(e) == "table" and tonumber(e[0]) or 0
+  if not n or n <= 0 then return nil end
+  local out = { samples = n, items = {}, kind = e.kind, qty = e.q, counts = e.c }
+  for id, c in pairs(e) do
+    if type(id) == "number" and id > 0 then out.items[id] = 100 * c / n end
+  end
+  if e[-1] then out.grey = 100 * e[-1] / n end
+  if not e.kind then
+    out.noItems = 100 * (e[-2] or 0) / n
+    local gn = e[-3]
+    if gn and gn > 0 then out.gold = { e[-5], e[-6], e[-4] / gn } end
+  end
+  return out
+end
+
+-- Builds the upload string from this install's own recorded loot: db has
+-- clientId, own, ownGather, ownPick (counted records by NPC ID), and the
+-- names in mobs[npcID] = { name } and items[itemID] = { name, quality }.
 function Codec.Export(db, addonVersion, build)
   local lines = {
     ("MD1 U %s %d %s %s"):format(db.clientId, time and time() or 0, addonVersion or "0", build or "0"),
@@ -145,13 +170,13 @@ function Codec.Export(db, addonVersion, build)
     if (db.own[npcID][0] or 0) > 0 then named[npcID] = true end
   end
   for _, npcID in ipairs(SortedKeys(named)) do
-    local m = db.mobs[npcID]
+    local m = db.mobs and db.mobs[npcID]
     if m and m[1] then
       lines[#lines + 1] = ("M %d %s"):format(npcID, (m[1]:gsub("[\r\n]", " ")))
     end
   end
   for _, itemID in ipairs(SortedKeys(itemsUsed)) do
-    local info = db.items[itemID]
+    local info = db.items and db.items[itemID]
     if info and info[1] then
       lines[#lines + 1] = ("I %d %d %s"):format(itemID, info[2] or 1, (info[1]:gsub("[\r\n]", " ")))
     end
@@ -225,6 +250,7 @@ function Codec.ParseSnapshot(str)
     gather = gather,
     pick = pick,
     generated = date and date("%Y-%m-%d", tonumber(generated)) or generated,
+    generatedAt = tonumber(generated), -- unix time, to tell which of two snapshots is newer
     contributors = tonumber(contributors),
   }, items, count, mobs
 end

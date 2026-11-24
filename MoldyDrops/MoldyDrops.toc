@@ -1,20 +1,23 @@
 ## Interface: 16001
-## Title: MoldyDrops
-## Notes: Shows a mob's top 5 drops and drop rates in its tooltip. Records your own loot and shares it through export/import strings.
-## Version: 0.1.0
+## Title: |cffa335eeMoldy|rDrops
+## Notes: Shows a mob's top drops and drop rates in its tooltip, records your own loot, and shares it through export/import strings. Add MoldyDrops_112 (1.12 estimates) and MoldyDrops_Community for more data.
+## Version: @project-version@
 ## X-License: GPL-3.0-or-later
-## SavedVariables: MoldyDropsDB
+## SavedVariables: MoldyDropsDB, MoldyDropsRecorderDB
 
 embeds.xml
-BaseData.lua
 Core.lua
+Sources.lua
 Codec.lua
-Recorder.lua
+LootWindow.lua
 Tooltip.lua
-ExportUI.lua
+TextWindow.lua
 Luck.lua
 Options.lua
 ModelPreview.lua
 SearchWindow.lua
 Search.lua
 ReverseSearch.lua
+API.lua
+Recorded.lua
+Recorder.lua

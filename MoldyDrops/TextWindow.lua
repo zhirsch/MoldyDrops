@@ -1,12 +1,9 @@
-local ADDON, ns = ...
+local _, ns = ...
 
--- One window, used both to copy the export string and to paste an import.
+-- One window with a big text box, a status line and a button. The data
+-- source addons use it (MoldyDrops.OpenTextWindow) to copy the export string
+-- and to paste an import.
 local frame
-
-local function GetAddOnVersion()
-  local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-  return get and get(ADDON, "Version") or "0"
-end
 
 local function Build()
   local ok, f = pcall(CreateFrame, "Frame", "MoldyDropsExportFrame", UIParent, "BasicFrameTemplateWithInset")
@@ -67,54 +64,17 @@ local function Build()
   return f
 end
 
-local function Open(title, help)
+-- Opens the window, empty, with a title ("Export" becomes "MoldyDrops: Export")
+-- and help text. Returns the frame: .edit (EditBox), .button, .status, .title, .help.
+function ns.OpenTextWindow(title, help)
   frame = frame or Build()
-  frame.title:SetText(title)
-  frame.help:SetText(help)
+  frame.title:SetText(ns.BRAND .. ": " .. tostring(title))
+  frame.help:SetText(help or "")
   frame.status:SetText("")
   frame.edit:SetText("")
   frame.edit:SetScript("OnTextChanged", nil)
+  frame.button:SetScript("OnClick", function() frame:Hide() end)
+  frame.button:SetText("Close")
   frame:Show()
   return frame
-end
-
-function ns.ShowExport()
-  local str, npcCount = ns.Codec.Export(ns.db, GetAddOnVersion(), select(4, GetBuildInfo()))
-  ns.db.lastExport = time()
-  local f = Open("MoldyDrops: Export",
-    "Press Ctrl+C to copy, then paste it on the MoldyDrops website. It contains only the loot you recorded, under a random ID.")
-  f.edit:SetText(str)
-  f.edit:HighlightText()
-  f.edit:SetFocus()
-  f.status:SetText(("%d mobs, %d characters"):format(npcCount, #str))
-  f.button:SetText("Close")
-  f.button:SetScript("OnClick", function() f:Hide() end)
-  -- Keep the text from being edited by accident.
-  f.edit:SetScript("OnTextChanged", function(self, userInput)
-    if userInput then self:SetText(str); self:HighlightText() end
-  end)
-end
-
-function ns.ShowImport()
-  local f = Open("MoldyDrops: Import",
-    "Paste the string from the MoldyDrops website (Ctrl+V), then click Import. It replaces the community data; your own recordings are kept.")
-  f.edit:SetFocus()
-  f.button:SetText("Import")
-  f.button:SetScript("OnClick", function()
-    local community, items, count, mobs = ns.Codec.ParseSnapshot(f.edit:GetText())
-    if not community then
-      f.status:SetText("|cffff4040" .. items .. "|r")
-      return
-    end
-    ns.db.community = community
-    for id, info in pairs(items) do
-      if not ns.db.items[id] then ns.db.items[id] = info end
-    end
-    for id, info in pairs(mobs) do
-      if not ns.db.mobs[id] then ns.db.mobs[id] = info end
-    end
-    ns.Print(("imported community data for %d mobs from %d contributors (generated %s)."):format(
-      count, community.contributors or 0, community.generated or "?"))
-    f:Hide()
-  end)
 end

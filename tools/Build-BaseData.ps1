@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds MoldyDrops\BaseData.lua from the CMaNGOS classic-db full dump.
+  Builds MoldyDrops_112\BaseData.lua from the CMaNGOS classic-db full dump.
 
 .DESCRIPTION
   Download the dump from https://github.com/cmangos/classic-db/tree/master/Full_DB
@@ -15,7 +15,7 @@
 #>
 param(
   [Parameter(Mandatory)] [string] $Dump,
-  [string] $Out = (Join-Path $PSScriptRoot '..\MoldyDrops\BaseData.lua'),
+  [string] $Out = (Join-Path $PSScriptRoot '..\MoldyDrops_112\BaseData.lua'),
   [int] $TopN = 10   # tooltip shows 5; the /drops window shows up to 10
 )
 

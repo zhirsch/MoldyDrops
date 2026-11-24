@@ -7,3 +7,5 @@ tests/index.html
 server/target/
 # local Claude Code config
 .claude/
+# BigWigs packager output when run locally
+.release/

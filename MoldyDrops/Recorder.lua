@@ -1,6 +1,8 @@
 local _, ns = ...
+local api = ns.api -- API.lua, loaded before this file
 
--- Records what drops from the mobs you kill.
+-- Records what drops from the mobs you kill. MoldyDrops tells it which mob
+-- each loot window belongs to (MoldyDrops.RegisterLootListener).
 --
 -- A drop rate is (corpses that had the item) / (kills), so empty corpses
 -- matter as much as full ones. Rules that keep the numbers honest:
@@ -18,8 +20,8 @@ local _, ns = ...
 --     aren't targeting are seen too.
 --   * Each corpse is recorded once (re-opening the loot window is ignored).
 --   * Skinning, herbalism and mining a corpse are recorded separately
---     (ns.db.ownGather), once per corpse, solo or not. So is pick
---     pocketing (ns.db.ownPick), once per mob.
+--     (ns.rdb.ownGather), once per corpse, solo or not. So is pick
+--     pocketing (ns.rdb.ownPick), once per mob.
 --   * For each counted kill it also notes whether the corpse had no items
 --     ([-2]) and how much gold it had ([-3] count, [-4] sum, [-5] min, [-6] max).
 local Recorder = {}
@@ -33,19 +35,10 @@ local engaged = {}    -- [guid] = true if you or your pet were on its threat tab
 local died = {}       -- [guid] = true once its death has been handled
 local gathered = {}   -- [guid] = true once its gathering loot has been recorded
 local pickpocketed = {} -- [guid] = true once its pick pocket loot has been recorded
-local lastGatherAt = 0
-local lastGatherKind
--- spell name -> kind (1 skinning, 2 herbalism, 3 mining, 4 engineering, 5 pick pocket)
-local gatherSpells = { Skinning = 1, ["Herb Gathering"] = 2, Herbalism = 2, Mining = 3, ["Pick Pocket"] = 5 }
 
 local LOOT_SLOT_ITEM = (Enum and Enum.LootSlotType and Enum.LootSlotType.Item) or LOOT_SLOT_ITEM or 1
 
-local function NpcIDFromGUID(guid)
-  if not guid then return nil end
-  local unitType, _, _, _, _, npcID = strsplit("-", guid)
-  if unitType == "Creature" then return tonumber(npcID) end
-end
-ns.NpcIDFromGUID = NpcIDFromGUID
+local NpcIDFromGUID = api.NpcIDFromGUID
 
 local function IsSolo()
   if IsInGroup then return not IsInGroup() end
@@ -53,7 +46,7 @@ local function IsSolo()
 end
 
 local function Entry(npcID)
-  local own = ns.db.own
+  local own = ns.rdb.own
   local e = own[npcID]
   if not e then
     e = { [0] = 0 }
@@ -64,22 +57,23 @@ end
 
 -- Negative keys in a drop entry, next to [0] = kills and [-1] = grey corpses.
 local NO_ITEMS, GOLD_N, GOLD_SUM, GOLD_MIN, GOLD_MAX = -2, -3, -4, -5, -6
-ns.ENTRY_KEYS = { NO_ITEMS = NO_ITEMS, GOLD_N = GOLD_N, GOLD_SUM = GOLD_SUM, GOLD_MIN = GOLD_MIN, GOLD_MAX = GOLD_MAX }
 
 -- Counts a kill once per corpse; returns true if it was counted just now.
 local function CountKill(guid)
   if counted[guid] then return false end
   local npcID = NpcIDFromGUID(guid)
   if not npcID then return false end
-  if ns.db.settings.openWorldOnly and IsInInstance() then return false end
+  if not api.GetSetting("record") then return false end
+  if api.GetSetting("openWorldOnly") and IsInInstance() then return false end
   counted[guid] = true
   local e = Entry(npcID)
   e[0] = e[0] + 1
-  -- Remember names of mobs the bundled data doesn't know (new in WoW Forever).
+  -- Remember names of mobs no data source knows by that name (new in WoW Forever).
   local name = names[guid]
-  if name and not ns.db.mobs[npcID] and not (ns.mobs and ns.mobs[npcID] and ns.mobs[npcID][1] == name) then
-    ns.db.mobs[npcID] = { name }
+  if name and not ns.rdb.mobs[npcID] and api.MobInfo(npcID) ~= name then
+    ns.rdb.mobs[npcID] = { name }
   end
+  api.DataChanged()
   return true
 end
 
@@ -87,6 +81,7 @@ end
 local function NoteNoItems(guid)
   local e = Entry(NpcIDFromGUID(guid))
   e[NO_ITEMS] = (e[NO_ITEMS] or 0) + 1
+  api.DataChanged()
 end
 
 -- A counted corpse had this much copper.
@@ -195,10 +190,7 @@ end
 local PICKPOCKET = 5
 local SESSION_GRACE = 2 -- seconds after the loot window closes to still accept loot chat lines
 
-local function Debug(msg)
-  if ns.db and ns.db.settings.debug then ns.Print("|cff808080[debug]|r " .. msg) end
-end
-ns.Debug = Debug
+local function Debug(msg) api.Debug(msg) end
 
 -- One loot window = one mob (WoW Forever has no area looting). A session
 -- tracks that mob while its loot window is open and briefly after, and
@@ -207,32 +199,20 @@ ns.Debug = Debug
 --   * the loot slots on LOOT_OPENED,
 --   * your "You receive loot:" chat lines (which still arrive when fast
 --     autoloot empties the window before the addon can read it).
+-- MoldyDrops works out which mob and which action (loot, gathering, pick
+-- pocketing) the window is for, and hands that over as the session's ctx.
 local session
 
 local function MobName(guid)
   local npcID = NpcIDFromGUID(guid)
-  return (names[guid] or (npcID and ns.MobInfo(npcID)) or ("NPC " .. tostring(npcID)))
-end
-
--- The one mob this loot window belongs to.
-local function CorpseGUID()
-  for slot = 1, GetNumLootItems() do
-    local guid = Plain(GetLootSourceInfo(slot))
-    if NpcIDFromGUID(guid) then return guid end
-  end
-  -- Nothing readable (e.g. autoloot already emptied it): the dead mob you're
-  -- targeting or pointing at.
-  for _, unit in ipairs({ "target", "mouseover" }) do
-    local guid = Plain(UnitGUID(unit))
-    if guid and NpcIDFromGUID(guid) and UnitIsDead(unit) then return guid end
-  end
+  return (names[guid] or (npcID and api.MobInfo(npcID)) or ("NPC " .. tostring(npcID)))
 end
 
 -- The table an item gets counted into for this session (nil if not recording).
 local function SessionEntry(s)
   if s.skip then return nil end
   if s.section == "drop" then return Entry(s.npcID) end
-  local tbl = s.kind == PICKPOCKET and ns.db.ownPick or ns.db.ownGather
+  local tbl = s.kind == PICKPOCKET and ns.rdb.ownPick or ns.rdb.ownGather
   local e = tbl[s.npcID]
   if not e or e.kind ~= s.kind then
     e = { kind = s.kind, [0] = 0 }
@@ -243,12 +223,12 @@ end
 
 -- An item came out of the session's mob (counted once per item per mob).
 local function AddItem(s, itemID, count, name, quality, isQuest)
-  if ns.IsQuestItem(itemID, isQuest) then
-    Debug(("  %s: %s (quest item, not recorded)"):format(MobName(s.guid), name or ns.ItemInfo(itemID)))
+  if api.IsQuestItem(itemID, isQuest) then
+    Debug(("  %s: %s (quest item, not recorded)"):format(MobName(s.guid), name or api.ItemInfo(itemID)))
     return
   end
   count = math.max(1, tonumber(count) or 1)
-  if name and not ns.db.items[itemID] then ns.db.items[itemID] = { name, quality or 1 } end
+  if name and not ns.rdb.items[itemID] then ns.rdb.items[itemID] = { name, quality or 1 } end
   s.counts[itemID] = math.max(s.counts[itemID] or 0, count)
   if s.seen[itemID] then return end
   s.seen[itemID] = true
@@ -257,13 +237,14 @@ local function AddItem(s, itemID, count, name, quality, isQuest)
   if not e then return end
   e[itemID] = (e[itemID] or 0) + 1
   if s.section == "drop" then
-    local _, q = ns.ItemInfo(itemID)
+    local _, q = api.ItemInfo(itemID)
     if (quality or q) == 0 and not s.grey then
       s.grey = true
       e[-1] = (e[-1] or 0) + 1 -- corpses with at least one grey item
     end
   end
-  Debug(("  %s: %s x%d"):format(MobName(s.guid), name or ns.ItemInfo(itemID), count))
+  api.DataChanged()
+  Debug(("  %s: %s x%d"):format(MobName(s.guid), name or api.ItemInfo(itemID), count))
 end
 
 -- Reads whatever is still in the loot window into the session.
@@ -298,44 +279,24 @@ local function FinishSession(s)
     if s.copper then NoteGold(s.guid, s.copper) end
   end
   NoteCounts(e, s.counts)
+  api.DataChanged()
   Debug(("finished %s (%s)%s"):format(MobName(s.guid), s.section, s.anyItem and "" or ", no items"))
 end
 
-local function StartSession(event)
-  -- LOOT_READY then LOOT_OPENED for the same window: just read again.
-  if session and session.open then
-    ReadSlots(session)
-    return
-  end
+-- A new loot window, for the mob and action in ctx.
+local function StartSession(ctx, event)
   FinishSession(session)
-  session = nil
-  ns.lootContext = nil
-  if IsFishingLoot and IsFishingLoot() then Debug(event .. ": fishing, ignored") return end
-
-  local section, kind = "drop", nil
-  if GetTime() - lastGatherAt < 3 and lastGatherKind then
-    kind = lastGatherKind
-    section = kind == PICKPOCKET and "pick" or "gather"
-  end
-  local guid = CorpseGUID()
-  local targetGUID = Plain(UnitGUID("target"))
-  local targetAlive = targetGUID and NpcIDFromGUID(targetGUID) and not UnitIsDead("target")
-  if section == "pick" and not guid and targetAlive then
-    guid = targetGUID -- pick pocket window already emptied: it was your target
-  elseif section == "drop" and targetAlive and guid == targetGUID then
-    section, kind = "pick", PICKPOCKET -- the loot says it came from your living target
-  end
-  if not guid then Debug(event .. ": couldn't tell which mob this loot is from") return end
-
+  local guid, section = ctx.guid, ctx.section
   local s = {
-    guid = guid, npcID = NpcIDFromGUID(guid), section = section, kind = kind,
+    ctx = ctx, guid = guid, npcID = ctx.npcID, section = section, kind = ctx.kind,
     seen = {}, counts = {}, open = true,
   }
   session = s
-  ns.lootContext = { at = GetTime(), section = section, npcID = s.npcID }
 
   local done = section == "pick" and pickpocketed or section == "gather" and gathered or looted
-  if ns.db.settings.openWorldOnly and IsInInstance() then
+  if not api.GetSetting("record") then
+    s.skip = "recording is off"
+  elseif api.GetSetting("openWorldOnly") and IsInInstance() then
     s.skip = "in an instance"
   elseif done[guid] then
     s.skip = "already recorded"
@@ -350,33 +311,12 @@ local function StartSession(event)
     else
       local e = SessionEntry(s)
       e[0] = e[0] + 1
+      api.DataChanged()
     end
   end
   Debug(("%s: %s (%s)%s"):format(event, MobName(guid), section, s.skip and (", not recorded: " .. s.skip) or ""))
   ReadSlots(s)
 end
-
-local function OnLootClosed()
-  local s = session
-  if not s then return end
-  s.open = false
-  s.closedAt = GetTime()
-  C_Timer.After(SESSION_GRACE, function() FinishSession(s) end)
-end
-
--- "You receive loot: [item]" / "...x3" in the client's language.
-local selfLootPrefixes
-local function SelfLootPrefixes()
-  if selfLootPrefixes then return selfLootPrefixes end
-  selfLootPrefixes = {}
-  for _, fmt in ipairs({ LOOT_ITEM_SELF, LOOT_ITEM_SELF_MULTIPLE }) do
-    local prefix = type(fmt) == "string" and fmt:match("^(.-)%%s")
-    if prefix and prefix ~= "" then selfLootPrefixes[#selfLootPrefixes + 1] = prefix end
-  end
-  if #selfLootPrefixes == 0 then selfLootPrefixes[1] = "You receive loot: " end
-  return selfLootPrefixes
-end
-ns.SelfLootPrefixes = SelfLootPrefixes
 
 -- Your own loot chat line: credit the item to the mob being looted.
 local function OnLootMessage(msg)
@@ -384,7 +324,7 @@ local function OnLootMessage(msg)
   if not s or s.finished or type(msg) ~= "string" or (issecretvalue and issecretvalue(msg)) then return end
   if not s.open and GetTime() - (s.closedAt or 0) > SESSION_GRACE then return end
   local mine = false
-  for _, prefix in ipairs(SelfLootPrefixes()) do
+  for _, prefix in ipairs(api.SelfLootPrefixes()) do
     if msg:sub(1, #prefix) == prefix then mine = true break end
   end
   if not mine then return end
@@ -394,6 +334,22 @@ local function OnLootMessage(msg)
   local name = msg:match("|h%[(.-)%]|h")
   AddItem(s, itemID, count, name)
 end
+
+-- What MoldyDrops tells us about loot windows.
+local listener = {}
+function listener:OnLootOpened(ctx, event) StartSession(ctx, event) end
+function listener:OnLootUpdated(ctx)
+  -- LOOT_READY then LOOT_OPENED for the same window: just read again.
+  if session and session.ctx == ctx and session.open then ReadSlots(session) end
+end
+function listener:OnLootClosed(ctx)
+  local s = session
+  if not s or s.ctx ~= ctx then return end
+  s.open = false
+  s.closedAt = GetTime()
+  C_Timer.After(SESSION_GRACE, function() FinishSession(s) end)
+end
+function listener:OnLootMessage(_, msg) OnLootMessage(msg) end
 
 -- Game functions recording can't work without.
 local REQUIRED = {
@@ -412,24 +368,20 @@ function Recorder:Init()
   end
   if #missing > 0 then
     ns.recordingDisabled = table.concat(missing, ", ")
-    ns.Print("loot recording is off: this game client has no " .. ns.recordingDisabled ..
+    api.Print("loot recording is off: this game client has no " .. ns.recordingDisabled ..
       ". The tooltip and search still work.")
     return
   end
 
-  -- Localized names of the gathering spells (the English ones are built in).
-  for id, kind in pairs({ [8613] = 1, [2366] = 2, [2575] = 3, [921] = 5 }) do
-    local name = ns.SpellName(id)
-    if name then gatherSpells[name] = kind end
-  end
+  api.RegisterLootListener(listener)
 
   local f = CreateFrame("Frame")
   -- Register one at a time: an event this client doesn't have is an error.
   local function Register(event) return pcall(f.RegisterEvent, f, event) end
   for _, event in ipairs({
-    "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED", "CHAT_MSG_LOOT", "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "PLAYER_FOCUS_CHANGED",
+    "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "PLAYER_FOCUS_CHANGED",
     "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_HEALTH", "UNIT_FLAGS",
-    "UNIT_THREAT_LIST_UPDATE", "UNIT_SPELLCAST_SUCCEEDED", "PLAYER_REGEN_ENABLED",
+    "UNIT_THREAT_LIST_UPDATE", "PLAYER_REGEN_ENABLED",
   }) do Register(event) end
   ns.killMethod = "threat tracking"
   if GetCombatLogInfo and Register("COMBAT_LOG_EVENT_UNFILTERED") then
@@ -439,12 +391,6 @@ function Recorder:Init()
   f:SetScript("OnEvent", function(_, event, ...)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
       OnCombatLog()
-    elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
-      StartSession(event)
-    elseif event == "LOOT_CLOSED" then
-      OnLootClosed()
-    elseif event == "CHAT_MSG_LOOT" then
-      OnLootMessage((...))
     elseif event == "PLAYER_TARGET_CHANGED" then
       NoteUnit("target")
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
@@ -455,14 +401,6 @@ function Recorder:Init()
         or event == "UNIT_HEALTH" or event == "UNIT_FLAGS" or event == "UNIT_THREAT_LIST_UPDATE" then
       local unit = ...
       if IsMobToken(unit) then NoteUnit(unit) end
-    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-      local unit, _, spellID = ...
-      if unit == "player" and spellID then
-        local name = ns.SpellName(spellID)
-        if name and gatherSpells[name] then
-          lastGatherAt, lastGatherKind = GetTime(), gatherSpells[name]
-        end
-      end
     elseif event == "PLAYER_REGEN_ENABLED" then
       -- Out of combat: keep the tracking tables small. Tap and engagement
       -- state is kept until then because corpses are often checked after.

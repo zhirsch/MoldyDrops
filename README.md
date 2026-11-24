@@ -4,7 +4,17 @@ A World of Warcraft: Forever addon that shows a mob's most likely drops, with dr
 
 ## Install
 
-Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\`. Use whatever folder your client uses for WoW Forever addons.
+Copy these folders into `World of Warcraft\_forever_\Interface\AddOns\`. Use whatever folder your client uses for WoW Forever addons.
+
+| Folder | What it does |
+|---|---|
+| `MoldyDrops` | The addon itself: tooltips, search windows, luck tags, options, recording your own loot, `/drops export` and `/drops import`. Needed by the others. |
+| `MoldyDrops_112` | Optional data: drop chances from the original 1.12 game (CMaNGOS data) |
+| `MoldyDrops_Community` | Optional data: the community data from the website, released from its own repository, [MoldyDrops_Community](https://github.com/zhirsch/MoldyDrops_Community). It comes with the latest snapshot; `/drops import` loads a newer one. |
+
+Drop chances come from **data sources**: your own loot (built in), the 1.12 data and the community data. Turn them on or off in the options (Data sources), or leave an optional folder out. Other addons can provide drop chances too; see [docs/data-sources.md](docs/data-sources.md).
+
+Upgrading from 0.1 (one folder) starts fresh: the loot recorded and imported with 0.1 isn't kept. Your settings are.
 
 ## Commands
 
@@ -13,12 +23,14 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops search <mob name>` | Opens a window that finds mobs by name and shows their drops |
 | `/drops item <item name>` | Opens a window that finds items by name and lists the mobs that drop them, highest chance first |
 | `/drops export` | Opens a window with your recorded loot as a string to upload |
-| `/drops import` | Opens a window to paste community data from the website |
-| `/drops options` | Opens MoldyDrops in the game's Options > AddOns panel: tooltip on/off, how many items the tooltip shows (1-10; the search windows always show every drop), dungeons and raids, luck tags, debug |
+| `/drops import` | Opens a window to paste community data from the website (the data goes to MoldyDrops_Community) |
+| `/drops options` | Opens MoldyDrops in the game's Options > AddOns panel: tooltip on/off, how many items the tooltip shows (1-10; the search windows always show every drop), only while a key is held (Ctrl or Alt), dungeons and raids, data sources, luck tags, debug |
 | `/drops stats` | Prints the state of the database |
 | `/drops tooltip` | Turns the tooltip on or off |
+| `/drops modifier` | Shows the tooltip drops only while Ctrl is held, or always again. `/drops modifier alt` uses Alt instead, `/drops modifier off` turns it off |
 | `/drops luck` | Turns the `[4.2%] (Lucky!)` tags on unlikely loot on or off |
 | `/drops chance` | Shows the drop chance on every loot message, or only on unlikely loot |
+| `/drops record` | Turns recording your loot on or off (on by default; what's recorded is kept) |
 | `/drops debug` | Prints what each loot window recorded, to check that recording works |
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
 | `/drops reset` | Deletes the loot, gathering and pick pocketing you've recorded |
@@ -92,3 +104,20 @@ MoldyDrops is licensed under the [GNU General Public License v3.0](LICENSE).
 `MoldyDrops/Libs` bundles [Ace3](https://www.wowace.com/projects/ace3) (LibStub, CallbackHandler, AceGUI, AceConfig) under its own BSD-style license.
 
 `MoldyDrops/BaseData.lua` is generated from the [CMaNGOS classic-db](https://github.com/cmangos/classic-db) loot tables, which are also GPL-3.0. World of Warcraft names and game data are trademarks and copyrights of Blizzard Entertainment. This project isn't affiliated with Blizzard or CMaNGOS.
+
+## Releasing
+
+Pushing a tag builds `MoldyDrops-<tag>.zip` with the [BigWigs packager](https://github.com/BigWigsMods/packager) (`.pkgmeta`, `.github/workflows/release.yml`) and attaches it to a GitHub release. The zip has `MoldyDrops` and `MoldyDrops_112` side by side, and each `.toc`'s `@project-version@` becomes the tag. Use an annotated tag:
+
+```powershell
+git tag -a v0.2.0 -m "MoldyDrops 0.2.0"
+git push origin v0.2.0
+```
+
+`MoldyDrops_Community` is released from its own repository, so its snapshot releases don't fill this changelog.
+
+To also upload to CurseForge, WoWInterface or Wago, add the project's ID to `MoldyDrops/MoldyDrops.toc` (`## X-Curse-Project-ID:`, `## X-WoWI-ID:`, `## X-Wago-ID:`) and its token as a repository secret (`CF_API_KEY`, `WOWI_API_TOKEN`, `WAGO_API_TOKEN`).
+
+## Tests
+
+`tests\build.ps1` builds `tests\index.html`, which runs the addons in the browser. It loads `MoldyDrops_Community` from a clone of its repository next to this one (`..\MoldyDrops_Community`), or from `-Community <path>`.

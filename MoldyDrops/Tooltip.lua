@@ -1,13 +1,15 @@
 local _, ns = ...
 
--- Picks which numbers to show for a mob:
---   1. Observed rates (community snapshot or your own, whichever has more
---      kills) once they cover at least MIN_SAMPLE kills.
---   2. Otherwise the 1.12 estimate from BaseData.lua, if there is one.
+-- Picks which data source's numbers to show for a mob (and separately for its
+-- gathering and pick pocketing), among the sources that are turned on:
+--   1. The observed source (one that counts kills, like the community data or
+--      your own) with the most kills, once it has at least MIN_SAMPLE.
+--   2. Otherwise the first estimate source (like the 1.12 data) that has the mob.
 --   3. Otherwise whatever observed data exists, flagged as a small sample.
--- Community and own data are never added together: your uploads are already
--- part of the community numbers, so summing would count them twice.
+-- Sources are never added together: your uploads are already part of the
+-- community numbers, so summing would count them twice.
 local Tooltip = {}
+local Sources = ns.Sources
 ns.Tooltip = Tooltip
 
 local GOLD = { 1, 0.82, 0 }
@@ -43,51 +45,60 @@ local function Count(n, word) return n .. " " .. word .. (n == 1 and "" or "s") 
 
 local function ByRate(a, b) return a[2] > b[2] or (a[2] == b[2] and a[1] < b[1]) end
 
--- How many of an item come at once: min, max (nil if unknown).
--- section is "drop", "gather", "pick" (key = npcID) or "content" (key =
--- container item ID). Recorded counts (community first, then yours) win
--- over the 1.12 data.
--- The recorded entries for a section: community, own (either may be nil).
-local function Recorded(section, key)
-  local db = ns.db
-  if section == "drop" then
-    return db.community.npcs and db.community.npcs[key], db.own[key]
-  elseif section == "gather" then
-    return db.community.gather and db.community.gather[key], db.ownGather[key]
-  elseif section == "pick" then
-    return db.community.pick and db.community.pick[key], db.ownPick[key]
-  end -- "quest", "content": only the 1.12 counts
+-- The source method for each section: key is an NPC ID, or for "content" a
+-- container's item ID.
+local METHOD = { drop = "Drops", gather = "Gather", pick = "Pick", quest = "Quest", content = "Contents" }
+
+-- The entries the sources that are turned on have for a section: recorded
+-- ones first, most samples first, then estimates in source order. Stack
+-- counts come from the first that knows, so real counts beat 1.12 ranges.
+local function Ranked(method, key)
+  local obs, est = {}, {}
+  for _, src in ipairs(Sources.Enabled()) do
+    local e = Sources.Get(src, method, key)
+    if e then
+      if src.observed then obs[#obs + 1] = e else est[#est + 1] = e end
+    end
+  end
+  if #obs > 1 then
+    local pos = {}
+    for i, e in ipairs(obs) do pos[e] = i end
+    table.sort(obs, function(a, b)
+      local na, nb = tonumber(a.samples) or 0, tonumber(b.samples) or 0
+      if na ~= nb then return na > nb end
+      return pos[a] < pos[b]
+    end)
+  end
+  for _, e in ipairs(est) do obs[#obs + 1] = e end
+  return obs
 end
 
+-- How many of an item come at once: min, max (nil if unknown). section is
+-- "drop", "gather", "pick", "quest" (key = npcID) or "content" (key =
+-- container item ID).
 function Tooltip.Qty(section, key, itemID)
-  local comm, own = Recorded(section, key)
-  for _, e in ipairs({ comm or false, own or false }) do
-    local q = e and e.q and e.q[itemID]
-    if q then return q[1], q[2] end
-  end
-  local b = ns.qty and ns.qty[section] and ns.qty[section][key]
-  if b then
-    for i = 1, #b - 2, 3 do
-      if b[i] == itemID then return b[i + 1], b[i + 2] end
-    end
+  local method = METHOD[section]
+  if not method then return nil end
+  for _, e in ipairs(Ranked(method, key)) do
+    local q = type(e.qty) == "table" and e.qty[itemID]
+    if type(q) == "table" and tonumber(q[2]) then return tonumber(q[1]) or 1, tonumber(q[2]) end
   end
 end
 
 -- For an item that can come more than one at a time, the chance of each
 -- count: { { count, percent }, ... } (lowest count first), splitting pct (the
--- item's overall chance) between them. Uses the recorded tally of counts
--- (community first, then yours); otherwise the 1.12 range, where every count
--- in min..max is equally likely (as in CMaNGOS). nil for single items.
+-- item's overall chance) between them. Uses the first recorded tally of
+-- counts a source has; otherwise the range, where every count in min..max is
+-- equally likely (as in CMaNGOS). nil for single items.
 function Tooltip.CountChances(section, key, itemID, pct)
   local min, max = Tooltip.Qty(section, key, itemID)
   if not max or max <= 1 then return nil end
-  local comm, own = Recorded(section, key)
-  for _, e in ipairs({ comm or false, own or false }) do
-    local h = e and e.c and e.c[itemID]
-    if h then
+  for _, e in ipairs(Ranked(METHOD[section], key)) do
+    local h = type(e.counts) == "table" and e.counts[itemID]
+    if type(h) == "table" then
       local total, out = 0, {}
       for count, n in pairs(h) do
-        if type(count) == "number" and n > 0 then
+        if type(count) == "number" and type(n) == "number" and n > 0 then
           total = total + n
           out[#out + 1] = { count, n }
         end
@@ -111,28 +122,70 @@ function ns.QtyText(min, max)
   return " |cff9d9d9dx" .. (min == max and tostring(max) or (min .. "-" .. max)) .. "|r"
 end
 
--- From an observed entry, returns rows { itemID, percent } with all grey
--- items folded into one row (itemID ns.GREY = corpses with any grey item /
--- kills), plus the individual grey rows. Without a grey count in the data,
--- the combined rate is estimated assuming independent drops.
-local function ObservedRows(e)
-  local kills = e[0]
-  local rows, greys = {}, {}
-  local noGrey = 1
-  for itemID, c in pairs(e) do
-    if type(itemID) == "number" and itemID > 0 and not ns.IsQuestItem(itemID) then -- skips [0], negatives, e.q, quest items
-      local _, quality = ns.ItemInfo(itemID)
-      if quality == 0 then
-        greys[#greys + 1] = { itemID, 100 * c / kills }
-        noGrey = noGrey * (1 - c / kills)
-      else
-        rows[#rows + 1] = { itemID, 100 * c / kills }
+local UNIT = { Drops = "kill", Gather = "corpse", Pick = "mob" }
+
+-- Chooses one source's entry for a mob: method is "Drops", "Gather" or
+-- "Pick". Returns the entry, a note saying where it comes from
+-- ("community, 120 kills", "1.12 estimate (you: 3 kills)"), and the source.
+function Tooltip.Select(method, npcID)
+  local unit = UNIT[method] or "kill"
+  local obs, obsSrc, est, estSrc
+  for _, src in ipairs(Sources.Enabled()) do
+    local e = Sources.Get(src, method, npcID)
+    if e then
+      if src.observed then
+        local n = tonumber(e.samples) or 0
+        -- Most samples wins; on a tie, the earlier source.
+        if n > 0 and (not obs or n > obs.samples) then obs, obsSrc = e, src end
+      elseif not est then
+        est, estSrc = e, src
       end
     end
   end
-  if e[-1] then
-    rows[#rows + 1] = { ns.GREY, 100 * e[-1] / kills }
+  if obs and obs.samples >= ns.MIN_SAMPLE then
+    return obs, ("%s, %s"):format(obsSrc.label, Count(obs.samples, unit)), obsSrc
+  elseif est then
+    local note = estSrc.label
+    if obs then note = note .. (" (%s: %s)"):format(obsSrc.label, Count(obs.samples, unit)) end
+    return est, note, estSrc
+  elseif obs then
+    return obs, ("%s, only %s"):format(obsSrc.label, Count(obs.samples, unit)), obsSrc
+  end
+end
+
+-- An entry's items as rows { itemID, percent }, best first, with quest items
+-- left out. Valid item IDs only: a source can't break the tooltip with junk.
+local function ItemRows(map, keepQuestItems)
+  local out = {}
+  if type(map) ~= "table" then return out end
+  for itemID, pct in pairs(map) do
+    if type(itemID) == "number" and itemID > 0 and type(pct) == "number"
+        and (keepQuestItems or not ns.IsQuestItem(itemID)) then
+      out[#out + 1] = { itemID, pct }
+    end
+  end
+  return out
+end
+
+-- From a drops entry, returns rows { itemID, percent } with all grey items
+-- folded into one row (itemID ns.GREY = kills with any grey item), plus the
+-- individual grey rows. Grey items are the entry's .greys and any of its
+-- .items the game calls poor quality. Without a .grey chance in the entry,
+-- the combined chance is estimated assuming independent drops.
+local function DropRows(e)
+  local rows, greys = {}, ItemRows(e.greys)
+  local forced = type(e.greys) == "table" and e.greys or {}
+  for _, r in ipairs(ItemRows(e.items)) do
+    if not forced[r[1]] then
+      local _, quality = ns.ItemInfo(r[1])
+      if quality == 0 then greys[#greys + 1] = r else rows[#rows + 1] = r end
+    end
+  end
+  if type(e.grey) == "number" then
+    rows[#rows + 1] = { ns.GREY, e.grey }
   elseif #greys > 0 then
+    local noGrey = 1
+    for _, g in ipairs(greys) do noGrey = noGrey * (1 - math.min(100, g[2]) / 100) end
     rows[#rows + 1] = { ns.GREY, 100 * (1 - noGrey) }
   end
   table.sort(rows, ByRate)
@@ -140,99 +193,54 @@ local function ObservedRows(e)
   return rows, greys
 end
 
-local function Pairs(b)
-  local rows = {}
-  for i = 1, #(b or {}) - 1, 2 do rows[#rows + 1] = { b[i], b[i + 1] } end
+-- Returns rows, grey rows, and a note saying where the numbers come from.
+function Tooltip.Choose(npcID)
+  local e, note = Tooltip.Select("Drops", npcID)
+  if not e then return nil end
+  local rows, greys = DropRows(e)
+  return rows, greys, note
+end
+
+local function SectionRows(e)
+  local rows = ItemRows(e.items)
+  table.sort(rows, ByRate)
   return rows
 end
 
--- Returns rows, grey rows, and a note saying where the numbers come from.
-function Tooltip.Choose(npcID)
-  local db = ns.db
-  local own = db.own[npcID]
-  local comm = db.community.npcs and db.community.npcs[npcID]
-  local base = ns.base and ns.base[npcID]
-
-  local obs, obsLabel = nil, nil
-  if comm and (not own or comm[0] >= own[0]) then
-    obs, obsLabel = comm, "community"
-  elseif own and own[0] > 0 then
-    obs, obsLabel = own, "you"
-  end
-
-  if obs and obs[0] >= ns.MIN_SAMPLE then
-    local rows, greys = ObservedRows(obs)
-    return rows, greys, ("%s, %s"):format(obsLabel, Count(obs[0], "kill"))
-  elseif base then
-    local note = "1.12 estimate"
-    if obs then note = note .. (" (%s: %s)"):format(obsLabel, Count(obs[0], "kill")) end
-    return Pairs(base), Pairs(ns.baseGrey and ns.baseGrey[npcID]), note
-  elseif obs then
-    local rows, greys = ObservedRows(obs)
-    return rows, greys, ("%s, only %s"):format(obsLabel, Count(obs[0], "kill"))
-  end
-end
-
--- A separate section (gathering, pick pocketing). Returns kind, rows
--- { { itemID, percent per corpse gathered / mob pick pocketed }, ... } and a
--- note; nil if nothing is known. Same source rules as Choose.
-local function Section(own, comm, base, unit)
-  local db = ns.db
-  local obs, obsLabel
-  if comm and (not own or comm[0] >= own[0]) then
-    obs, obsLabel = comm, "community"
-  elseif own and own[0] > 0 then
-    obs, obsLabel = own, "you"
-  end
-  local function observed()
-    local rows = {}
-    for itemID, c in pairs(obs) do
-      if type(itemID) == "number" and itemID > 0 and not ns.IsQuestItem(itemID) then
-        rows[#rows + 1] = { itemID, 100 * c / obs[0] }
-      end
-    end
-    table.sort(rows, ByRate)
-    return rows
-  end
-
-  if obs and obs[0] >= ns.MIN_SAMPLE then
-    return obs.kind, observed(), ("%s, %s"):format(obsLabel, Count(obs[0], unit))
-  elseif base then
-    local rows = {}
-    for i = 2, #base - 1, 2 do rows[#rows + 1] = { base[i], base[i + 1] } end
-    local note = "1.12 estimate"
-    if obs then note = note .. (" (%s: %s)"):format(obsLabel, Count(obs[0], unit)) end
-    return base[1], rows, note
-  elseif obs then
-    return obs.kind, observed(), ("%s, only %s"):format(obsLabel, Count(obs[0], unit))
-  end
-end
-
--- Skinning, herbalism, mining or engineering the corpse (kind 1-4).
+-- Skinning, herbalism, mining or engineering the corpse (kind 1-4). Returns
+-- kind, rows { { itemID, percent per corpse gathered }, ... } and a note;
+-- nil if nothing is known. Same source rules as Choose.
 function Tooltip.Gather(npcID)
-  local db = ns.db
-  return Section(db.ownGather[npcID], db.community.gather and db.community.gather[npcID],
-    ns.gather and ns.gather[npcID], "corpse")
+  local e, note = Tooltip.Select("Gather", npcID)
+  if not e then return nil end
+  local kind = tonumber(e.kind)
+  if not kind or kind < 1 or kind > 4 then kind = 1 end
+  return kind, SectionRows(e), note
 end
 
--- Pick pocketing the mob (kind 5).
+-- Pick pocketing the mob (kind 5): chance per mob pick pocketed.
 function Tooltip.Pick(npcID)
-  local db = ns.db
-  return Section(db.ownPick[npcID], db.community.pick and db.community.pick[npcID],
-    ns.pick and ns.pick[npcID], "mob")
+  local e, note = Tooltip.Select("Pick", npcID)
+  if not e then return nil end
+  return ns.PICKPOCKET, SectionRows(e), note
 end
 
--- Quest drops (kind 6): { { itemID, percent per kill }, ... } from the 1.12
--- data. With all = false (the default), only items one of your quests still
--- needs, since they don't drop otherwise. Kept apart from the normal drops.
+-- Quest drops (kind 6): { { itemID, percent per kill }, ... } from the first
+-- source that has them. With all = false (the default), only items one of
+-- your quests still needs, since they don't drop otherwise. Kept apart from
+-- the normal drops.
 function Tooltip.Quest(npcID, all)
-  local q = ns.questDrops and ns.questDrops[npcID]
-  if not q then return nil end
-  local rows = {}
-  for i = 1, #q - 1, 2 do
-    if all or ns.NeedsQuestItem(q[i]) then rows[#rows + 1] = { q[i], q[i + 1] } end
+  for _, src in ipairs(Sources.Enabled()) do
+    local e = Sources.Get(src, "Quest", npcID)
+    if e then
+      local rows = {}
+      for _, r in ipairs(ItemRows(e.items, true)) do
+        if all or ns.NeedsQuestItem(r[1]) then rows[#rows + 1] = r end
+      end
+      table.sort(rows, ByRate)
+      return ns.QUEST, rows, src.label .. ", while on the quest"
+    end
   end
-  return ns.QUEST, rows, "1.12 estimate, while on the quest"
 end
 
 -- The extra sections to show for a mob: { { kind, rows, note }, ... }.
@@ -251,34 +259,15 @@ function Tooltip.Sections(npcID)
   return out
 end
 
-local K = ns.ENTRY_KEYS or { NO_ITEMS = -2, GOLD_N = -3, GOLD_SUM = -4, GOLD_MIN = -5, GOLD_MAX = -6 }
-
 -- Chance of a corpse with no items (percent), and gold { min, max, avg } in
--- copper (nil if the mob doesn't drop gold). Uses observed data when Choose
--- would, otherwise the 1.12 values.
+-- copper (nil if the mob doesn't drop gold), from the source Choose uses.
 function Tooltip.Extras(npcID)
-  local db = ns.db
-  local own = db.own[npcID]
-  local comm = db.community.npcs and db.community.npcs[npcID]
-  local obs
-  if comm and (not own or comm[0] >= own[0]) then obs = comm elseif own and own[0] > 0 then obs = own end
-  local base = ns.extra and ns.extra[npcID]
-
-  if obs and obs[0] >= ns.MIN_SAMPLE then
-    local gold
-    local n = obs[K.GOLD_N]
-    if n and n > 0 then gold = { obs[K.GOLD_MIN], obs[K.GOLD_MAX], obs[K.GOLD_SUM] / n } end
-    return 100 * (obs[K.NO_ITEMS] or 0) / obs[0], gold
-  elseif base then
-    local gold
-    if base[3] and base[3] > 0 then gold = { base[2], base[3], (base[2] + base[3]) / 2 } end
-    return base[1], gold
-  elseif obs then
-    local gold
-    local n = obs[K.GOLD_N]
-    if n and n > 0 then gold = { obs[K.GOLD_MIN], obs[K.GOLD_MAX], obs[K.GOLD_SUM] / n } end
-    return 100 * (obs[K.NO_ITEMS] or 0) / obs[0], gold
-  end
+  local e = Tooltip.Select("Drops", npcID)
+  if not e then return nil end
+  local gold = e.gold
+  if type(gold) ~= "table" or not (tonumber(gold[1]) and tonumber(gold[2])) then gold = nil end
+  if gold and not tonumber(gold[3]) then gold = { gold[1], gold[2], (gold[1] + gold[2]) / 2 } end
+  return tonumber(e.noItems), gold
 end
 
 -- "1g 2s 3c", colored like coins.
@@ -308,13 +297,17 @@ end
 local MAX_CONTENT_LINES = 5
 
 -- What's inside a container item (clam, lockbox...): { { itemID, percent per
--- container opened }, ... }, or nil if it isn't a known container.
+-- container opened }, ... } from the first source that knows, or nil if it
+-- isn't a known container.
 function Tooltip.Contents(itemID)
-  local c = ns.contents and ns.contents[itemID]
-  if not c then return nil end
-  local out = {}
-  for i = 1, #c - 1, 2 do out[#out + 1] = { c[i], c[i + 1] } end
-  return out
+  for _, src in ipairs(Sources.Enabled()) do
+    local e = Sources.Get(src, "Contents", itemID)
+    if e then
+      local rows = ItemRows(e.items)
+      table.sort(rows, ByRate)
+      return rows
+    end
+  end
 end
 
 -- With expand, adds a line per count under an item that can come more than
@@ -480,6 +473,7 @@ local function AddLoot(tooltip, unit)
     if not (issecretvalue and issecretvalue(canAttack)) and not canAttack then return end
   end
   if db.settings.openWorldOnly and IsInInstance() then return end
+  if not ns.TooltipModifierOk() then return end
 
   local npcID = ns.NpcIDFromGUID(UnitGUID(unit))
   if not npcID then return end
@@ -519,16 +513,23 @@ local function OnTooltipSetUnit(tooltip)
 end
 
 -- Pressing or releasing Shift redraws a unit tooltip so the grey list
--- opens or closes while you hover.
+-- opens or closes while you hover. So does the "only while a key is held"
+-- key, to add or remove the drops.
 local function OnModifierChanged(key)
-  if key ~= "LSHIFT" and key ~= "RSHIFT" then return end
+  local shift = key == "LSHIFT" or key == "RSHIFT"
+  local held = false
+  if ns.db and ns.db.settings.requireModifier then
+    local m = ns.ModifierKey()
+    held = key == m.left or key == m.right
+  end
+  if not shift and not held then return end
   if GameTooltip:IsShown() then
     local _, unit = GameTooltip:GetUnit()
     -- Only while you're still pointing at it: SetUnit on a fading tooltip
     -- (mouse moved away, corpse despawned) would make it stick.
     if Tooltip.StillLive(GameTooltip, unit) then GameTooltip:SetUnit(unit) end
   end
-  if ns.RefreshSearch then ns.RefreshSearch() end
+  if shift and ns.RefreshSearch then ns.RefreshSearch() end
 end
 
 function Tooltip:Init()

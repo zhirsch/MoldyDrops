@@ -1,7 +1,10 @@
 local ADDON, ns = ...
 
-ns.PREFIX = "|cffffd100MoldyDrops:|r "
-ns.MIN_SAMPLE = 20   -- kills needed before observed rates replace the 1.12 estimate
+-- The addon's name as shown in the game: "Moldy" in purple, "Drops" as is.
+ns.MOLDY_COLOR = "ffa335ee"
+ns.BRAND = "|c" .. ns.MOLDY_COLOR .. "Moldy|rDrops"
+ns.PREFIX = "|c" .. ns.MOLDY_COLOR .. "Moldy|r|cffffd100Drops:|r "
+ns.MIN_SAMPLE = 20   -- kills an observed source needs before its rates replace an estimate
 ns.TOP_N_DEFAULT = 5 -- drop rows in the tooltip (setting: settings.topN)
 ns.TOP_N_MAX = 10    -- the bundled 1.12 data keeps each mob's top 10
 
@@ -16,34 +19,37 @@ ns.ALL_ROWS = math.huge
 
 function ns.Print(msg) print(ns.PREFIX .. msg) end
 
--- SavedVariables layout
---   MoldyDropsDB.clientId          random ID that identifies this install's uploads
---   MoldyDropsDB.settings          { enabled, openWorldOnly }
---   MoldyDropsDB.own[npcID]        { [0] = kills, [-1] = corpses with any grey item,
---                                    [itemID] = corpses that dropped it }
---   MoldyDropsDB.community         { npcs = same shape as own, contributors, generated }
---   MoldyDropsDB.items[itemID]     { name, quality } for items seen in loot or imported
---   MoldyDropsDB.mobs[npcID]       { name } for mobs seen in game or imported
---   MoldyDropsDB.ownGather[npcID]  { kind = 1 skin/2 herb/3 mine/4 engineer, [0] = corpses
---                                    gathered, [itemID] = corpses that gave it }
---   MoldyDropsDB.community.gather  same shape as ownGather, from the website
---   MoldyDropsDB.ownPick[npcID]    { kind = 5, [0] = mobs pick pocketed, [itemID] = times it gave it }
---   MoldyDropsDB.community.pick    same shape as ownPick, from the website
+function ns.Debug(msg)
+  if ns.db and ns.db.settings.debug then ns.Print("|cff808080[debug]|r " .. msg) end
+end
+
+-- SavedVariables: MoldyDropsDB.settings
+--   enabled, topN, openWorldOnly, requireModifier, modifierKey, luck, chanceAlways, record, debug
+--   sources[sourceID] = false for a data source you turned off
+-- Your recorded loot is in MoldyDropsRecorderDB (Recorded.lua). The other
+-- data lives in the data source addons (MoldyDrops_112, MoldyDrops_Community).
 
 ns.GATHER_NAMES = { "Skinning", "Herbalism", "Mining", "Engineering", "Pick Pocket", "Quest" }
 ns.PICKPOCKET = 5
 ns.QUEST = 6 -- quest drops: only shown while one of your quests needs the item
+ns.GREY = 0  -- pseudo item ID for "any grey (poor quality) item"
 
--- Which ns.qty / Tooltip.Qty section a section kind's counts are in.
+-- Which Tooltip.Qty section a section kind's counts are in.
 function ns.SectionOf(kind)
   if kind == ns.PICKPOCKET then return "pick" end
   if kind == ns.QUEST then return "quest" end
   return "gather"
 end
 
--- Is the player on a quest that still needs itemID? Uses the 1.12 quest links
--- (ns.questFor). An objective naming the item decides; otherwise the quest
--- counts as needing it until it's complete.
+function ns.NpcIDFromGUID(guid)
+  if not guid then return nil end
+  local unitType, _, _, _, _, npcID = strsplit("-", guid)
+  if unitType == "Creature" then return tonumber(npcID) end
+end
+
+-- Is the player on a quest that still needs itemID? The data sources say which
+-- quests an item is for. An objective naming the item decides; otherwise the
+-- quest counts as needing it until it's complete.
 local function OnQuest(questID)
   if C_QuestLog and C_QuestLog.IsOnQuest then return C_QuestLog.IsOnQuest(questID) end
   if GetQuestLogIndexByID then return (GetQuestLogIndexByID(questID) or 0) > 0 end
@@ -55,7 +61,7 @@ local function QuestComplete(questID)
   return false
 end
 function ns.NeedsQuestItem(itemID)
-  local quests = ns.questFor and ns.questFor[itemID]
+  local quests = ns.Sources.QuestsFor(itemID)
   if not quests then return false end
   for _, questID in ipairs(quests) do
     local ok, on = pcall(OnQuest, questID)
@@ -92,64 +98,63 @@ function ns.ShiftHeld()
   return IsShiftKeyDown() and true or false
 end
 
+-- The keys the tooltip can wait for (settings.modifierKey), with their
+-- MODIFIER_STATE_CHANGED names. Shift isn't one: it already expands rows.
+ns.MODIFIER_KEYS = {
+  CTRL = { name = "Ctrl", left = "LCTRL", right = "RCTRL", down = function() return IsControlKeyDown() end },
+  ALT = { name = "Alt", left = "LALT", right = "RALT", down = function() return IsAltKeyDown() end },
+}
+
+function ns.ModifierKey()
+  return ns.MODIFIER_KEYS[ns.db.settings.modifierKey] or ns.MODIFIER_KEYS.CTRL
+end
+
+-- Should the tooltip show drops right now? Always, unless the "only while a
+-- key is held" option is on and that key is up.
+function ns.TooltipModifierOk()
+  local s = ns.db.settings
+  if not s.requireModifier then return true end
+  return ns.ModifierKey().down() and true or false
+end
+
 function ns.IsRogue()
   return UnitClass and select(2, UnitClass("player")) == "ROGUE"
-end
-local function NewClientId()
-  local chars = "0123456789abcdefghijklmnopqrstuvwxyz"
-  local t = {}
-  for i = 1, 16 do
-    local n = math.random(1, #chars)
-    t[i] = chars:sub(n, n)
-  end
-  return table.concat(t)
 end
 
 local function InitDB()
   MoldyDropsDB = MoldyDropsDB or {}
   local db = MoldyDropsDB
+  -- Only settings live here; 0.1 also kept its data here. That's dropped, not moved.
+  for k in pairs(db) do if k ~= "settings" then db[k] = nil end end
   db.settings = db.settings or {}
   if db.settings.enabled == nil then db.settings.enabled = true end
   if db.settings.openWorldOnly == nil then db.settings.openWorldOnly = true end
   if db.settings.luck == nil then db.settings.luck = true end
-  db.own = db.own or {}
-  db.ownGather = db.ownGather or {}
-  db.ownPick = db.ownPick or {}
-  db.community = db.community or { npcs = {} }
-  db.community.gather = db.community.gather or {}
-  db.community.pick = db.community.pick or {}
-  db.items = db.items or {}
-  db.mobs = db.mobs or {}
-  if not db.clientId then
-    -- No math.randomseed: WoW removes it and seeds math.random itself.
-    db.clientId = NewClientId()
-  end
+  if db.settings.record == nil then db.settings.record = true end
+  if db.settings.modifierKey == nil then db.settings.modifierKey = "CTRL" end
+  db.settings.sources = db.settings.sources or {}
   ns.db = db
 end
 
--- Item name/quality: what we've seen in game first, then the bundled table.
-ns.GREY = 0  -- pseudo item ID for "any grey (poor quality) item"
-
+-- Item name and quality: from the data sources, then the game client.
 function ns.ItemInfo(itemID)
   if itemID == ns.GREY then return "Grey items", 0 end
-  local seen = ns.db and ns.db.items[itemID]
-  if seen then return seen[1], seen[2] end
-  local base = ns.items and ns.items[itemID]
-  if base then return base[1], base[2] end
-  local name, quality = ns.ClientItemInfo(itemID)
+  local name, quality = ns.Sources.ItemInfo(itemID)
+  if name then return name, quality or 1 end
+  name, quality = ns.ClientItemInfo(itemID)
   if name then return name, quality end
   return "item:" .. itemID, 1
 end
 
 -- Quest drops (items that only drop while you're on the quest) are left out of
 -- all loot tables. Items that drop for everyone stay, even when the game calls
--- them quest items (Gorilla Fang). The bundled 1.12 data decides for items it
--- knows; for others, the loot window's "quest item" flag (isQuestFlag) or the
--- item class (12 = Quest) does.
+-- them quest items (Gorilla Fang). A data source that knows the item decides
+-- (the 1.12 data does); otherwise the loot window's "quest item" flag
+-- (isQuestFlag) or the item class (12 = Quest) does.
 local questCache = {}
 function ns.IsQuestItem(itemID, isQuestFlag)
-  if ns.questOnly and ns.questOnly[itemID] then return true end
-  if ns.questOk and ns.questOk[itemID] then return false end
+  local known = ns.Sources.IsQuestItem(itemID)
+  if known ~= nil then return known end
   if isQuestFlag then questCache[itemID] = true return true end
   if questCache[itemID] ~= nil then return questCache[itemID] end
   local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
@@ -174,12 +179,9 @@ function ns.ClientItemInfo(itemID)
   return name, quality
 end
 
--- Mob name and level range (levels only known for bundled 1.12 mobs).
+-- Mob name, level range and model ID, from the data sources.
 function ns.MobInfo(npcID)
-  local base = ns.mobs and ns.mobs[npcID]
-  local seen = ns.db and ns.db.mobs[npcID]
-  local name = (seen and seen[1]) or (base and base[1])
-  return name, base and base[2], base and base[3], base and base[4] -- name, min level, max level, model ID
+  return ns.Sources.MobInfo(npcID)
 end
 
 local f = CreateFrame("Frame")
@@ -190,75 +192,56 @@ f:SetScript("OnEvent", function(self, _, name)
   InitDB()
   -- Start each part on its own, so an error in one (still reported through
   -- the normal error handler) doesn't stop the others.
-  for _, part in ipairs({ ns.Tooltip, ns.Recorder, ns.Options }) do
+  for _, part in ipairs({ ns.Tooltip, ns.LootWindow, ns.Recorded, ns.Recorder, ns.Options }) do
     xpcall(function() part:Init() end, geterrorhandler())
   end
 end)
-
--- Returns mobs, total kills, mobs with at least MIN_SAMPLE kills, distinct items.
-local function CountNpcs(t)
-  local n, kills, solid, items = 0, 0, 0, {}
-  for _, e in pairs(t or {}) do
-    n = n + 1
-    local k = e[0] or 0
-    kills = kills + k
-    if k >= ns.MIN_SAMPLE then solid = solid + 1 end
-    for id in pairs(e) do if type(id) == "number" and id > 0 then items[id] = true end end
-  end
-  local ni = 0
-  for _ in pairs(items) do ni = ni + 1 end
-  return n, kills, solid, ni
-end
-
-local function Count(t)
-  local n = 0
-  for _ in pairs(t or {}) do n = n + 1 end
-  return n
-end
 
 local function PrintStats()
   local db = ns.db
   local W = "|cffffffff"
   ns.Print("database status")
-  print(("  1.12 estimates (bundled): %s%d|r mobs, %s%d|r items"):format(W, Count(ns.base), W, Count(ns.items)))
-
-  local n, k, solid, items = CountNpcs(db.own)
-  print(("  Your recordings: %s%d|r kills of %s%d|r mobs, %s%d|r different items; %s%d|r mobs have %d+ kills"):format(
-    W, k, W, n, W, items, W, solid, ns.MIN_SAMPLE))
-  local gn, gk = CountNpcs(db.ownGather)
-  print(("    gathering: %s%d|r corpses of %s%d|r mobs (skinning, herbalism, mining)"):format(W, gk, W, gn))
-  print(("    last export: %s"):format(db.lastExport and date("%Y-%m-%d %H:%M", db.lastExport) or "never"))
-
-  local c = db.community
-  if c and c.generated then
-    local cn, ck, csolid, citems = CountNpcs(c.npcs)
-    print(("  Community data: %s%d|r kills of %s%d|r mobs, %s%d|r different items; %s%d|r mobs have %d+ kills"):format(
-      W, ck, W, cn, W, citems, W, csolid, ns.MIN_SAMPLE))
-    print(("    from %s%d|r contributors, generated %s"):format(W, c.contributors or 0, c.generated))
-  else
-    print("  Community data: none yet. Get it from the website and use /drops import.")
+  local sources = ns.Sources.All()
+  if #sources == 0 then
+    print("  No data sources installed. Enable MoldyDrops_112 or MoldyDrops_Community.")
   end
-
-  print(("  Names known in game: %s%d|r mobs, %s%d|r items"):format(W, Count(db.mobs), W, Count(db.items)))
-  print(("  Tooltip: %s, %s; %s"):format(
+  for _, src in ipairs(sources) do
+    local on = ns.Sources.IsEnabled(src)
+    print(("  %s%s|r%s"):format(W, src.name, on and "" or " |cff808080(turned off)|r"))
+    local lines = ns.Sources.Call(src, "Stats")
+    for _, line in ipairs(type(lines) == "table" and lines or {}) do print("    " .. tostring(line)) end
+  end
+  print(("  Tooltip: %s, %s%s"):format(
     db.settings.enabled and "on" or "off", db.settings.openWorldOnly and "open world only" or "everywhere",
-    ns.recordingDisabled and ("|cffff4040recording off (missing " .. ns.recordingDisabled .. ")|r")
-      or ("recording while solo, kills seen by " .. (ns.killMethod or "?"))))
+    db.settings.requireModifier and (", while " .. ns.ModifierKey().name .. " is held") or ""))
+end
+
+-- Commands other addons add (MoldyDrops.RegisterCommand): [name] = { help, run }.
+local extra, extraOrder = {}, {}
+ns.commands = extra -- for tests
+
+function ns.RegisterCommand(names, help, run)
+  if type(names) == "string" then names = { names } end
+  if type(names) ~= "table" or type(run) ~= "function" then
+    error("MoldyDrops.RegisterCommand(names, help, run): names is a string or a list, run a function", 2)
+  end
+  local cmd = { help = help, run = run }
+  for _, n in ipairs(names) do extra[n:lower()] = cmd end
+  if help then extraOrder[#extraOrder + 1] = cmd end
 end
 
 local HELP = {
   "|cffffffff/drops search <mob name>|r - find a mob and show its drops (short: /drop s, or just /drops <mob name>)",
   "|cffffffff/drops item <item name>|r - find an item and show the mobs that drop it (short: /drop i)",
-  "|cffffffff/drops export|r - copy your recorded loot to upload to the website",
-  "|cffffffff/drops import|r - paste community data from the website",
-  "|cffffffff/drops options|r - open the options window",
-  "|cffffffff/drops stats|r - show the state of the database",
+  "|cffffffff/drops options|r - open the options window (and choose the data sources)",
+  "|cffffffff/drops stats|r - show the state of the data sources",
   "|cffffffff/drops tooltip|r - turn the tooltip on or off",
+  "|cffffffff/drops modifier [ctrl, alt or off]|r - only show the tooltip drops while Ctrl (or Alt) is held",
   "|cffffffff/drops luck|r - turn the [4.2%] (Lucky!) tags on unlikely loot on or off",
   "|cffffffff/drops chance|r - always show the drop chance on loot messages, or only when lucky",
+  "|cffffffff/drops record|r - turn recording your loot on or off",
   "|cffffffff/drops debug|r - print what each loot window recorded (to check recording)",
   "|cffffffff/drops instances|r - also show the tooltip inside dungeons and raids",
-  "|cffffffff/drops reset|r - delete the loot you've recorded",
 }
 
 SLASH_MOLDYDROPS1 = "/drops"
@@ -272,15 +255,29 @@ SlashCmdList.MOLDYDROPS = function(msg)
     ns.ShowSearch(rest)
   elseif cmd == "item" or cmd == "i" then
     ns.ShowItemSearch(rest)
-  elseif cmd == "export" then
-    ns.ShowExport()
-  elseif cmd == "import" then
-    ns.ShowImport()
   elseif cmd == "tooltip" then
     db.settings.enabled = not db.settings.enabled
     ns.Print(db.settings.enabled and "tooltip enabled" or "tooltip disabled")
+  elseif cmd == "modifier" or cmd == "mod" then
+    -- "/drops modifier" toggles; with ctrl or alt it turns on with that key; off turns it off.
+    local arg = rest:lower()
+    if arg == "ctrl" or arg == "control" then
+      db.settings.requireModifier, db.settings.modifierKey = true, "CTRL"
+    elseif arg == "alt" then
+      db.settings.requireModifier, db.settings.modifierKey = true, "ALT"
+    elseif arg == "off" or arg == "none" then
+      db.settings.requireModifier = false
+    else
+      db.settings.requireModifier = not db.settings.requireModifier
+    end
+    ns.Print(db.settings.requireModifier
+      and ("tooltip drops shown only while " .. ns.ModifierKey().name .. " is held")
+      or "tooltip drops always shown")
   elseif cmd == "options" or cmd == "config" then
     ns.ShowOptions()
+  elseif cmd == "record" then
+    db.settings.record = not db.settings.record
+    ns.Print(db.settings.record and "recording your loot" or "not recording your loot (what's recorded so far is kept)")
   elseif cmd == "debug" then
     db.settings.debug = not db.settings.debug
     ns.Print(db.settings.debug and "debug on: each loot window prints what was recorded" or "debug off")
@@ -296,16 +293,12 @@ SlashCmdList.MOLDYDROPS = function(msg)
     ns.Print(db.settings.openWorldOnly and "open world only" or "showing in instances too")
   elseif cmd == "stats" then
     PrintStats()
-  elseif cmd == "reset" then
-    if rest == "confirm" then
-      db.own, db.ownGather, db.ownPick = {}, {}, {}
-      ns.Print("your recorded loot, gathering and pick pocketing were deleted.")
-    else
-      ns.Print("this deletes all loot you've recorded. Type |cffffffff/drops reset confirm|r to do it.")
-    end
+  elseif extra[cmd] then
+    extra[cmd].run(rest)
   elseif cmd == "" or cmd == "help" then
     ns.Print("commands:")
     for _, line in ipairs(HELP) do print("  " .. line) end
+    for _, c in ipairs(extraOrder) do print("  " .. c.help) end
   else
     -- Not a subcommand: treat the whole text as a mob search ("/drops defias thug").
     ns.ShowSearch((msg:gsub("^%s+", ""):gsub("%s+$", "")))
