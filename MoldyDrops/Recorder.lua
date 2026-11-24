@@ -172,10 +172,13 @@ end
 
 local LOOT_SLOT_MONEY = (Enum and Enum.LootSlotType and Enum.LootSlotType.Money) or LOOT_SLOT_MONEY or 2
 
--- Widens the recorded min/max count of each item in an entry (e.q[itemID] = { min, max }).
+-- Widens the recorded min/max count of each item in an entry (e.q[itemID] =
+-- { min, max }) and tallies how often each count came (e.c[itemID][count] =
+-- corpses that gave exactly that many).
 local function NoteCounts(e, n)
   if not n then return end
   e.q = e.q or {}
+  e.c = e.c or {}
   for itemID, count in pairs(n) do
     local q = e.q[itemID]
     if q then
@@ -183,6 +186,9 @@ local function NoteCounts(e, n)
     else
       e.q[itemID] = { count, count }
     end
+    local h = e.c[itemID] or {}
+    e.c[itemID] = h
+    h[count] = (h[count] or 0) + 1
   end
 end
 

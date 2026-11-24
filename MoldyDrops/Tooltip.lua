@@ -47,16 +47,20 @@ local function ByRate(a, b) return a[2] > b[2] or (a[2] == b[2] and a[1] < b[1])
 -- section is "drop", "gather", "pick" (key = npcID) or "content" (key =
 -- container item ID). Recorded counts (community first, then yours) win
 -- over the 1.12 data.
-function Tooltip.Qty(section, key, itemID)
+-- The recorded entries for a section: community, own (either may be nil).
+local function Recorded(section, key)
   local db = ns.db
-  local own, comm
   if section == "drop" then
-    own, comm = db.own[key], db.community.npcs and db.community.npcs[key]
+    return db.community.npcs and db.community.npcs[key], db.own[key]
   elseif section == "gather" then
-    own, comm = db.ownGather[key], db.community.gather and db.community.gather[key]
+    return db.community.gather and db.community.gather[key], db.ownGather[key]
   elseif section == "pick" then
-    own, comm = db.ownPick[key], db.community.pick and db.community.pick[key]
-  end -- "quest": only the 1.12 counts
+    return db.community.pick and db.community.pick[key], db.ownPick[key]
+  end -- "quest", "content": only the 1.12 counts
+end
+
+function Tooltip.Qty(section, key, itemID)
+  local comm, own = Recorded(section, key)
   for _, e in ipairs({ comm or false, own or false }) do
     local q = e and e.q and e.q[itemID]
     if q then return q[1], q[2] end
@@ -67,6 +71,38 @@ function Tooltip.Qty(section, key, itemID)
       if b[i] == itemID then return b[i + 1], b[i + 2] end
     end
   end
+end
+
+-- For an item that can come more than one at a time, the chance of each
+-- count: { { count, percent }, ... } (lowest count first), splitting pct (the
+-- item's overall chance) between them. Uses the recorded tally of counts
+-- (community first, then yours); otherwise the 1.12 range, where every count
+-- in min..max is equally likely (as in CMaNGOS). nil for single items.
+function Tooltip.CountChances(section, key, itemID, pct)
+  local min, max = Tooltip.Qty(section, key, itemID)
+  if not max or max <= 1 then return nil end
+  local comm, own = Recorded(section, key)
+  for _, e in ipairs({ comm or false, own or false }) do
+    local h = e and e.c and e.c[itemID]
+    if h then
+      local total, out = 0, {}
+      for count, n in pairs(h) do
+        if type(count) == "number" and n > 0 then
+          total = total + n
+          out[#out + 1] = { count, n }
+        end
+      end
+      if total > 0 then
+        table.sort(out, function(a, b) return a[1] < b[1] end)
+        for _, r in ipairs(out) do r[2] = pct * r[2] / total end
+        return out
+      end
+    end
+  end
+  local out = {}
+  min = math.max(1, min or 1)
+  for count = min, max do out[#out + 1] = { count, pct / (max - min + 1) } end
+  return out
 end
 
 -- " x1-2" (grey) when more than one can come at once, else "".
@@ -281,10 +317,24 @@ function Tooltip.Contents(itemID)
   return out
 end
 
+-- With expand, adds a line per count under an item that can come more than
+-- one at a time: { itemID, percent, "count", nil, count }. Returns whether
+-- the item has such a breakdown.
+local function AddCountLines(lines, section, key, itemID, pct, expand, deep)
+  local counts = itemID ~= ns.GREY and Tooltip.CountChances(section, key, itemID, pct)
+  if not counts then return false end
+  if expand then
+    for _, c in ipairs(counts) do lines[#lines + 1] = { itemID, c[2], "count", nil, c[1], deep } end
+  end
+  return true
+end
+
 -- The lines to display: up to maxRows rows. With expand (Shift held), grey
--- items are listed under the grey row and container contents under each
--- container; those extra lines don't count toward maxRows.
--- Each line is { itemID, percent, kind }, kind nil, "grey" or "content".
+-- items are listed under the grey row, container contents under each
+-- container, and the chance of each count under items that can come more than
+-- one at a time; those extra lines don't count toward maxRows.
+-- Each line is { itemID, percent, kind, qty, count }, kind nil, "grey",
+-- "content" or "count".
 -- Also returns the source note and whether anything can be expanded.
 function Tooltip.Lines(npcID, maxRows, expand)
   local rows, greys, note = Tooltip.Choose(npcID)
@@ -292,6 +342,7 @@ function Tooltip.Lines(npcID, maxRows, expand)
   local lines, expandable = {}, false
   local function add(itemID, pct, kind)
     lines[#lines + 1] = { itemID, pct, kind, itemID ~= ns.GREY and { Tooltip.Qty("drop", npcID, itemID) } or nil }
+    if AddCountLines(lines, "drop", npcID, itemID, pct, expand, kind == "grey") then expandable = true end
     local inside = itemID ~= ns.GREY and Tooltip.Contents(itemID)
     if inside then
       expandable = true
@@ -321,17 +372,50 @@ end
 function Tooltip.LineText(line, expand)
   local itemID, pct, kind, qty = line[1], line[2], line[3], line[4]
   local name, quality = ns.ItemInfo(itemID)
+  if kind == "count" then
+    -- exactly this many: "    Runecloth x2"
+    local indent = line[6] and "        " or "    "
+    return indent .. QualityHex(quality or 1) .. name .. "|r |cff9d9d9dx" .. line[5] .. "|r", ColoredPct(pct, quality)
+  end
   local text = QualityHex(quality or 1) .. name .. "|r" .. (qty and ns.QtyText(qty[1], qty[2]) or "")
   if kind == "content" then
     return "      |cff808080in it:|r " .. text, ColoredPct(pct, quality)
   elseif kind == "grey" then
     text = "    " .. text
   end
-  if not expand and kind ~= "content" then
-    local hasChildren = (itemID == ns.GREY) or Tooltip.Contents(itemID)
+  if not expand then
+    local hasChildren = (itemID == ns.GREY) or Tooltip.Contents(itemID) or (qty and qty[2] and qty[2] > 1)
     if hasChildren then text = text .. " |cff808080(Shift)|r" end
   end
   return text, ColoredPct(pct, quality)
+end
+
+-- A separate section's display rows { left, right, line } (gathering, pick
+-- pocketing, quest drops): up to maxRows items, each with its per-count
+-- chances under it when expand is set. Also returns whether Shift would show more.
+function Tooltip.SectionLines(kind, rows, npcID, maxRows, expand)
+  local section = ns.SectionOf(kind)
+  local lines, expandable = {}, false
+  for i = 1, math.min(maxRows, #rows) do
+    local itemID, pct = rows[i][1], rows[i][2]
+    lines[#lines + 1] = { itemID, pct, section, { Tooltip.Qty(section, npcID, itemID) } }
+    if AddCountLines(lines, section, npcID, itemID, pct, expand) then expandable = true end
+  end
+  local out = {}
+  for _, line in ipairs(lines) do
+    local left, right
+    if line[3] == "count" then
+      left, right = Tooltip.LineText(line, expand)
+    else
+      local name, quality = ns.ItemInfo(line[1])
+      local qty = line[4]
+      left = QualityHex(quality or 1) .. name .. "|r" .. ns.QtyText(qty[1], qty[2])
+        .. ((not expand and qty[2] and qty[2] > 1) and " |cff808080(Shift)|r" or "")
+      right = ColoredPct(line[2], quality)
+    end
+    out[#out + 1] = { left, right, line }
+  end
+  return out, expandable
 end
 
 -- The whole Drops section as display rows { left, right, line }: the top
@@ -393,10 +477,8 @@ local function AddLoot(tooltip, unit)
     local kind, rows, note = s[1], s[2], s[3]
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine(ns.GATHER_NAMES[kind] or "Gathering", note, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
-    for i = 1, math.min(ns.TopN(), #rows) do
-      local name, quality = ns.ItemInfo(rows[i][1])
-      local qty = ns.QtyText(Tooltip.Qty(ns.SectionOf(kind), npcID, rows[i][1]))
-      tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r" .. qty, ColoredPct(rows[i][2], quality), 1, 1, 1, 1, 1, 1)
+    for _, r in ipairs((Tooltip.SectionLines(kind, rows, npcID, ns.TopN(), expand))) do
+      tooltip:AddDoubleLine(r[1], r[2], 1, 1, 1, 1, 1, 1)
     end
     added = true
   end

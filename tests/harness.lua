@@ -743,6 +743,40 @@ local mwMob
 for _, m in ipairs(ns.MobsDropping(4338)) do if m.id == 660 then mwMob = m end end
 check("item search carries the count", mwMob and mwMob.qty and mwMob.qty[2] == 2)
 
+-- chance of each count, on Shift (1.12: every count in the range equally likely)
+do
+local cc = ns.Tooltip.CountChances("drop", 660, 4338, mw[2])
+check("1.12 count chances split evenly: x1 and x2 each half",
+  cc and #cc == 2 and cc[1][1] == 1 and cc[2][1] == 2 and math.abs(cc[1][2] - mw[2] / 2) < 1e-9 and cc[1][2] == cc[2][2])
+check("single items have no count chances", ns.Tooltip.CountChances("drop", 6, 159, 5) == nil)
+local function countLines(lines, itemID)
+  local n, sum = 0, 0
+  for _, l in ipairs(lines or {}) do if l[3] == "count" and l[1] == itemID then n, sum = n + 1, sum + l[2] end end
+  return n, sum
+end
+local n0 = countLines(ns.Tooltip.Lines(660, 10, false), 4338)
+local n1, sum1 = countLines(ns.Tooltip.Lines(660, 10, true), 4338)
+check("no count lines without Shift; one per count with Shift, adding up to the item's chance",
+  n0 == 0 and n1 == 2 and math.abs(sum1 - mw[2]) < 1e-9)
+check("without Shift the stacked row hints (Shift)", ns.Tooltip.LineText(mw, false):find("(Shift)", 1, true))
+local cl
+for _, l in ipairs(ns.Tooltip.Lines(660, 10, true)) do if l[3] == "count" and l[5] == 2 then cl = l end end
+local cleft = cl and ns.Tooltip.LineText(cl, true)
+check("count line reads '    Mageweave Cloth x2'", cleft and cleft:find("^    ") and cleft:find("Mageweave Cloth", 1, true)
+  and cleft:find("x2", 1, true), cleft)
+local dsec = ns.Tooltip.DropSection(660, 10, true)
+local afterNoItems = false
+for i, r in ipairs(dsec) do
+  if r[3] == nil and r[1]:find("No items") and dsec[i + 1] and dsec[i + 1][3] and dsec[i + 1][3][3] == "count" then afterNoItems = true end
+end
+check("No items never lands between a row and its count lines", not afterNoItems)
+local sl = ns.Tooltip.SectionLines(1, { { 2318, 50 } }, 157, 10, true) -- Light Leather x1-2 from skinning
+local sl0 = ns.Tooltip.SectionLines(1, { { 2318, 50 } }, 157, 10, false)
+check("section lines: count breakdown on Shift, one line otherwise",
+  #sl == 3 and sl[2][3][3] == "count" and sl[2][3][5] == 1 and math.abs(sl[2][3][2] - 25) < 1e-9 and #sl0 == 1
+  and sl0[1][1]:find("x1-2", 1, true), #sl .. " " .. #sl0)
+end
+
 -- recorded stacks override the 1.12 range
 local g660 = guid(660, 1)
 Kill(g660, true, "Bloodscalp Witch Doctor")
@@ -750,16 +784,29 @@ Loot({ { guid = g660, item = 4338, name = "Mageweave Cloth", q = 1, qty = 3 } })
 check("recorded stack size", MoldyDropsDB.own[660] and MoldyDropsDB.own[660].q and MoldyDropsDB.own[660].q[4338][2] == 3)
 qmin, qmax = ns.Tooltip.Qty("drop", 660, 4338)
 check("recorded count wins over 1.12", qmin == 3 and qmax == 3)
+check("recorded count tally", MoldyDropsDB.own[660].c and MoldyDropsDB.own[660].c[4338][3] == 1)
+for n = 2, 3 do
+  local g = guid(660, n)
+  Kill(g, true, "Bloodscalp Witch Doctor")
+  Loot({ { guid = g, item = 4338, name = "Mageweave Cloth", q = 1, qty = 1 } })
+end
+do
+  local rc = ns.Tooltip.CountChances("drop", 660, 4338, 60)
+  check("recorded tally splits the chance: x1 2 of 3, x3 1 of 3 (none for x2)",
+    rc and #rc == 2 and rc[1][1] == 1 and math.abs(rc[1][2] - 40) < 1e-9 and rc[2][1] == 3 and math.abs(rc[2][2] - 20) < 1e-9)
+end
 local stats, _ = pcall(SlashCmdList.MOLDYDROPS, "stats")
 check("stats still works with counts recorded", stats)
 local str2 = ns.Codec.Export(MoldyDropsDB, "0.1.0", 16001)
 local text2 = ns.Codec.Base64Decode(str2:sub(6))
-check("export Q token", text2:find("Q:4338:3:3", 1, true) ~= nil)
-local snap2 = "!MD1!" .. js.global:btoa("MD1 S 1795400000 2\nN 660 40 4338:20 Q:4338:1:4 $:40:800:5:30\nS 157 1 30 2318:30 Q:2318:1:3\n")
+check("export Q token", text2:find("Q:4338:1:3", 1, true) ~= nil, text2:match("N 660[^\n]*"))
+check("export C tokens", text2:find("C:4338:1:2 C:4338:3:1", 1, true) ~= nil, text2:match("N 660[^\n]*"))
+local snap2 = "!MD1!" .. js.global:btoa("MD1 S 1795400000 2\nN 660 40 4338:20 Q:4338:1:4 C:4338:1:15 C:4338:4:5 $:40:800:5:30\nS 157 1 30 2318:30 Q:2318:1:3\n")
 local comm2 = ns.Codec.ParseSnapshot(snap2)
 local c660 = comm2.npcs[660]
 check("snapshot Q parsed, no phantom items", c660.q and c660.q[4338][1] == 1 and c660.q[4338][2] == 4
-  and c660[1] == nil and c660[4] == nil and c660[40] == nil and c660[4338] == 20)
+  and c660[1] == nil and c660[4] == nil and c660[40] == nil and c660[4338] == 20 and c660[15] == nil and c660[5] == nil)
+check("snapshot C tallies parsed", c660.c and c660.c[4338][1] == 15 and c660.c[4338][4] == 5)
 check("snapshot Q on S records", comm2.gather[157].q and comm2.gather[157].q[2318][2] == 3 and comm2.gather[157][1] == nil)
 
 -- luck tags on loot messages (Defias Thug, 1.12 data: Small Red Pouch 0.1%, Spring Water 6.4%)

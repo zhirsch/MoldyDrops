@@ -61,25 +61,23 @@ local window = ns.CreateSearchWindow({
     local expand = ns.ShiftHeld()
     local out = {}
     local rows, source, expandable = ns.Tooltip.DropSection(r.id, ns.ALL_ROWS, expand)
-    if source then
-      header.source = "Source: " .. source .. ((expandable and not expand) and "  ·  hold Shift for more" or "")
-    else
-      header.source = #rows > 0 and "Source: 1.12 estimate" or "No drop data for this mob yet."
-    end
     for _, row in ipairs(rows) do out[#out + 1] = row end
 
     -- Quest drops you need, gathering and pick pocketing (rogues), each under its own heading.
     for _, s in ipairs(ns.Tooltip.Sections(r.id)) do
-      local kind, rows, note = s[1], s[2], s[3]
-      local section = ns.SectionOf(kind)
+      local kind, srows, note = s[1], s[2], s[3]
       out[#out + 1] = { " ", nil, nil }
       out[#out + 1] = { "|cffffd100" .. (ns.GATHER_NAMES[kind] or "Gathering") .. "|r  |cff999999" .. note .. "|r", nil, nil }
-      for i = 1, math.min(ns.ALL_ROWS, #rows) do
-        local name, quality = ns.ItemInfo(rows[i][1])
-        local qty = ns.QtyText(ns.Tooltip.Qty(section, r.id, rows[i][1]))
-        out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r" .. qty, ns.ColoredPct(rows[i][2], quality),
-          { rows[i][1], rows[i][2], section } }
-      end
+      local lines, more = ns.Tooltip.SectionLines(kind, srows, r.id, ns.ALL_ROWS, expand)
+      if more then expandable = true end
+      for _, row in ipairs(lines) do out[#out + 1] = row end
+    end
+
+    local hint = (expandable and not expand) and "  ·  hold Shift for more" or ""
+    if source then
+      header.source = "Source: " .. source .. hint
+    else
+      header.source = (#rows > 0 and "Source: 1.12 estimate" or "No drop data for this mob yet.") .. hint
     end
     return header, out
   end,
@@ -90,7 +88,10 @@ local window = ns.CreateSearchWindow({
       GameTooltip:AddLine("Chance of at least one poor-quality (grey) item per kill.", 1, 1, 1, true)
     else
       GameTooltip:SetHyperlink("item:" .. itemID)
-      if kind == "content" then
+      if kind == "count" then
+        GameTooltip:AddLine(("Chance of exactly %d."):format(line[5])
+          .. " Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6, true)
+      elseif kind == "content" then
         GameTooltip:AddLine("Chance per container opened, from 1.12 data. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
       elseif kind == "gather" then
         GameTooltip:AddLine("Chance per corpse gathered. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)

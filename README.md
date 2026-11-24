@@ -43,7 +43,7 @@ To see the chance on every loot message, not just unlucky ones, turn on **Always
 
 Quest drops, which only drop while you're on the quest, are kept out of the drop chances and the "no items" chance. Instead, while one of your quests still needs the item, the tooltip and search windows show a separate **Quest** section with the chance per kill, like **Tough Wolf Meat 80%** on Young Wolves. These chances come from the 1.12 data and match your quests by their 1.12 quest IDs. Your own quest loot isn't recorded. Items the game calls quest items but that drop for everyone, like Gorilla Fang, are listed with the normal drops.
 
-Items that can come more than one at a time show the count range after the name, like **Mageweave Cloth x1-2**. Counts you record replace the 1.12 range.
+Items that can come more than one at a time show the count range after the name, like **Mageweave Cloth x1-2**. Hold **Shift** to split that row into the chance of each count, like Mageweave Cloth x1 12% and x2 12%. In the 1.12 data every count in the range is equally likely, which is how the original game rolled them. Once you or the community have recorded stacks of that item from that mob, the recorded mix of counts is used instead, and the recorded range replaces the 1.12 one.
 
 All grey (poor quality) items share one "Grey items" row. Hold **Shift** to list them individually, in the tooltip or the search window. Shift also lists what's inside containers such as clams, with the chance of each item per container opened. Container contents come from the 1.12 data, so containers that are new in WoW Forever don't show contents.
 

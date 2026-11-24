@@ -73,17 +73,33 @@ local function QtyTokens(parts, e)
   table.sort(ids)
   for _, itemID in ipairs(ids) do
     parts[#parts + 1] = ("Q:%d:%d:%d"):format(itemID, e.q[itemID][1], e.q[itemID][2])
+    -- "C:<itemID>:<count>:<corpses>": how often exactly that many came
+    local h = e.c and e.c[itemID]
+    if h then
+      local counts = {}
+      for count in pairs(h) do counts[#counts + 1] = count end
+      table.sort(counts)
+      for _, count in ipairs(counts) do
+        parts[#parts + 1] = ("C:%d:%d:%d"):format(itemID, count, h[count])
+      end
+    end
   end
 end
 
--- Removes tokens whose numbers would look like item pairs ($ gold, Q counts),
--- and reads the Q counts into e.q.
+-- Removes tokens whose numbers would look like item pairs ($ gold, Q and C
+-- counts), and reads the Q ranges into e.q and the C tallies into e.c.
 local function StripTokens(rest, e)
   for itemID, qmin, qmax in rest:gmatch("Q:(%d+):(%d+):(%d+)") do
     e.q = e.q or {}
     e.q[tonumber(itemID)] = { tonumber(qmin), tonumber(qmax) }
   end
-  return (rest:gsub("%$:[%d:]+", ""):gsub("Q:[%d:]+", ""))
+  for itemID, count, n in rest:gmatch("C:(%d+):(%d+):(%d+)") do
+    itemID = tonumber(itemID)
+    e.c = e.c or {}
+    e.c[itemID] = e.c[itemID] or {}
+    e.c[itemID][tonumber(count)] = tonumber(n)
+  end
+  return (rest:gsub("%$:[%d:]+", ""):gsub("Q:[%d:]+", ""):gsub("C:[%d:]+", ""))
 end
 
 -- Builds the upload string from this install's own recorded loot.
