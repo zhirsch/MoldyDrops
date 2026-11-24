@@ -796,39 +796,39 @@ local gW1 = guid(299, 1) -- Diseased Young Wolf
 units.target = { guid = gW1, dead = true }
 loot = {}
 Fire("LOOT_READY")
-chatLoot(750, "Tough Wolf Meat")
+chatLoot(2672, "Stringy Wolf Meat")
 Fire("LOOT_CLOSED")
 units.target = nil
 local w = MoldyDropsDB.own[299]
 check("emptied window: kill credited to your dead target", w and w[0] == 1, w and w[0])
-check("emptied window: item picked up from the loot chat line", w and w[750] == 1)
+check("emptied window: item picked up from the loot chat line", w and w[2672] == 1)
 check("emptied window: not counted as no items", w and (w[-2] or 0) == 0)
 
 local gW2 = guid(299, 2)
-loot = { { guid = gW2, item = 750, name = "Tough Wolf Meat", q = 1 }, { guid = gW2, item = 7073, name = "Broken Fang", q = 0 } }
+loot = { { guid = gW2, item = 2672, name = "Stringy Wolf Meat", q = 1 }, { guid = gW2, item = 7073, name = "Broken Fang", q = 0 } }
 Fire("LOOT_READY") -- read before autoloot takes it
 loot = {}
 Fire("LOOT_OPENED") -- window already empty
-chatLoot(750, "Tough Wolf Meat")
+chatLoot(2672, "Stringy Wolf Meat")
 chatLoot(7073, "Broken Fang")
 Fire("LOOT_CLOSED")
-check("LOOT_READY + LOOT_OPENED + chat: one kill, each item once", w[0] == 2 and w[750] == 2 and w[7073] == 1, w[0] .. " " .. w[750])
+check("LOOT_READY + LOOT_OPENED + chat: one kill, each item once", w[0] == 2 and w[2672] == 2 and w[7073] == 1, w[0] .. " " .. w[2672])
 check("grey corpse counted once", (w[-1] or 0) == 1)
 
 local gW3 = guid(299, 3)
 units.target = { guid = gW3, dead = true }
 loot = {}
 Fire("LOOT_OPENED")
-Fire("CHAT_MSG_LOOT", "Bob receives loot: " .. link(750, "Tough Wolf Meat") .. ".")
+Fire("CHAT_MSG_LOOT", "Bob receives loot: " .. link(2672, "Stringy Wolf Meat") .. ".")
 Fire("LOOT_CLOSED")
 units.target = nil
-check("other players' loot lines aren't credited", w[0] == 3 and w[750] == 2 and w[-2] == 1, w[750])
-chatLoot(750, "Tough Wolf Meat") -- long after: no session
-check("loot lines outside a loot window are ignored", w[750] == 2)
+check("other players' loot lines aren't credited", w[0] == 3 and w[2672] == 2 and w[-2] == 1, w[2672])
+chatLoot(2672, "Stringy Wolf Meat") -- long after: no session
+check("loot lines outside a loot window are ignored", w[2672] == 2)
 
 SlashCmdList.MOLDYDROPS("debug")
 local before = #out
-Loot({ { guid = guid(299, 4), item = 750, name = "Tough Wolf Meat", q = 1 } })
+Loot({ { guid = guid(299, 4), item = 2672, name = "Stringy Wolf Meat", q = 1 } })
 local printed = false
 for i = before + 1, #out do if out[i]:find("[debug]", 1, true) then printed = true end end
 check("/drops debug prints each loot window", printed)
@@ -839,12 +839,13 @@ local function has(list, id)
   for i = 1, #(list or {}) - 1, 2 do if list[i] == id then return true end end
   return false
 end
-check("1.12 data has no quest items (Captain Sander's Treasure Map)", not has(ns.base[127], 1357) and has(ns.base[127], 1468))
+check("1.12 data has no quest-only drops (Tough Wolf Meat)", not has(ns.base[299], 750))
+check("quest-class items that drop for everyone stay (Captain Sander's Treasure Map)", has(ns.base[127], 1357))
 local gQ = guid(299, 50)
-local meatBefore = w[750]
-Loot({ { guid = gQ, item = 750, name = "Tough Wolf Meat", q = 1 },
+local meatBefore = w[2672]
+Loot({ { guid = gQ, item = 2672, name = "Stringy Wolf Meat", q = 1 },
        { guid = gQ, item = 55555, name = "Quest Thing", q = 1, quest = true } })
-check("quest item (loot window flag) not recorded", w[55555] == nil and w[750] == meatBefore + 1, w[750])
+check("quest item (loot window flag) not recorded", w[55555] == nil and w[2672] == meatBefore + 1, w[2672])
 local gQ2 = guid(299, 51)
 units.target = { guid = gQ2, dead = true }
 loot = {}
@@ -860,6 +861,17 @@ local hasRib = false
 for _, r in ipairs(qrows) do if r[1] == 884 then hasRib = true end end
 check("quest items already recorded are hidden", not hasRib and qrows[1] and qrows[1][1] == 2589)
 MoldyDropsDB.own[999001] = nil
+-- Quest-class items that drop for everyone stay (Gorilla Fang, Mistvale Gorilla)
+check("Gorilla Fang is in the 1.12 data", has(ns.base[1108], 2799))
+check("Gorilla Fang isn't a quest item, even with the loot window's flag",
+  not ns.IsQuestItem(2799) and not ns.IsQuestItem(2799, true))
+itemClass[2799] = 12
+local gG = guid(1108, 60)
+local fangBefore = (MoldyDropsDB.own[1108] or {})[2799] or 0
+Loot({ { guid = gG, item = 2799, name = "Gorilla Fang", q = 1, quest = true } })
+check("Gorilla Fang is recorded", MoldyDropsDB.own[1108] and MoldyDropsDB.own[1108][2799] == fangBefore + 1)
+local quest1 = next(ns.questOnly)
+check("items that only drop on a quest are quest items", quest1 and ns.IsQuestItem(quest1))
 
 -- options (AceConfig): registered in the game's settings, opened by /drops options
 check("options table registered with AceConfig", type(aceRegistered.MoldyDrops) == "function")

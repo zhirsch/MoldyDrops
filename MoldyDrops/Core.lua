@@ -89,12 +89,15 @@ function ns.ItemInfo(itemID)
   return "item:" .. itemID, 1
 end
 
--- Quest items are left out of all loot tables. The bundled 1.12 data already
--- has none; this catches recorded and imported ones. isQuestFlag is the loot
--- window's "quest item" flag when known; otherwise the item class decides
--- (class 12 = Quest).
+-- Quest drops (items that only drop while you're on the quest) are left out of
+-- all loot tables. Items that drop for everyone stay, even when the game calls
+-- them quest items (Gorilla Fang). The bundled 1.12 data decides for items it
+-- knows; for others, the loot window's "quest item" flag (isQuestFlag) or the
+-- item class (12 = Quest) does.
 local questCache = {}
 function ns.IsQuestItem(itemID, isQuestFlag)
+  if ns.questOnly and ns.questOnly[itemID] then return true end
+  if ns.questOk and ns.questOk[itemID] then return false end
   if isQuestFlag then questCache[itemID] = true return true end
   if questCache[itemID] ~= nil then return questCache[itemID] end
   local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant

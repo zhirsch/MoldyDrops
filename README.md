@@ -32,6 +32,8 @@ In either search window, **Ctrl+click** an item to see every mob that gives it (
 
 When you loot, skin, gather or pick pocket something unlikely, your loot message gets a gold tag with the chance, like **(Lucky! 4.2%)**: Lucky under 10%, Very lucky under 2%, Incredibly lucky under 0.5%. The chance is the one the tooltip shows for that mob.
 
+Quest drops, which only drop while you're on the quest, are left out everywhere. Items the game calls quest items but that drop for everyone, like Gorilla Fang, are shown.
+
 Items that can come more than one at a time show the count range after the name, like **Mageweave Cloth x1-2**. Counts you record replace the 1.12 range.
 
 All grey (poor quality) items share one "Grey items" row. Hold **Shift** to list them individually, in the tooltip or the search window. Shift also lists what's inside containers such as clams, with the chance of each item per container opened. Container contents come from the 1.12 data, so containers that are new in WoW Forever don't show contents.
