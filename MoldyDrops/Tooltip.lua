@@ -56,7 +56,7 @@ function Tooltip.Qty(section, key, itemID)
     own, comm = db.ownGather[key], db.community.gather and db.community.gather[key]
   elseif section == "pick" then
     own, comm = db.ownPick[key], db.community.pick and db.community.pick[key]
-  end
+  end -- "quest": only the 1.12 counts
   for _, e in ipairs({ comm or false, own or false }) do
     local q = e and e.q and e.q[itemID]
     if q then return q[1], q[2] end
@@ -186,11 +186,27 @@ function Tooltip.Pick(npcID)
     ns.pick and ns.pick[npcID], "mob")
 end
 
+-- Quest drops (kind 6): { { itemID, percent per kill }, ... } from the 1.12
+-- data. With all = false (the default), only items one of your quests still
+-- needs, since they don't drop otherwise. Kept apart from the normal drops.
+function Tooltip.Quest(npcID, all)
+  local q = ns.questDrops and ns.questDrops[npcID]
+  if not q then return nil end
+  local rows = {}
+  for i = 1, #q - 1, 2 do
+    if all or ns.NeedsQuestItem(q[i]) then rows[#rows + 1] = { q[i], q[i + 1] } end
+  end
+  return ns.QUEST, rows, "1.12 estimate, while on the quest"
+end
+
 -- The extra sections to show for a mob: { { kind, rows, note }, ... }.
--- Pick pocketing is only shown to rogues.
+-- Quest drops come first and only while you need them; pick pocketing is
+-- only shown to rogues.
 function Tooltip.Sections(npcID)
   local out = {}
-  local kind, rows, note = Tooltip.Gather(npcID)
+  local kind, rows, note = Tooltip.Quest(npcID)
+  if kind and #rows > 0 then out[#out + 1] = { kind, rows, note } end
+  kind, rows, note = Tooltip.Gather(npcID)
   if kind and #rows > 0 then out[#out + 1] = { kind, rows, note } end
   if ns.IsRogue() then
     kind, rows, note = Tooltip.Pick(npcID)
@@ -371,15 +387,15 @@ local function AddLoot(tooltip, unit)
     added = true
   end
 
-  -- Separate sections: skinning / herbalism / mining / engineering the corpse,
-  -- and pick pocketing (rogues only).
+  -- Separate sections: quest drops you need, skinning / herbalism / mining /
+  -- engineering the corpse, and pick pocketing (rogues only).
   for _, s in ipairs(Tooltip.Sections(npcID)) do
     local kind, rows, note = s[1], s[2], s[3]
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine(ns.GATHER_NAMES[kind] or "Gathering", note, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
     for i = 1, math.min(ns.TopN(), #rows) do
       local name, quality = ns.ItemInfo(rows[i][1])
-      local qty = ns.QtyText(Tooltip.Qty(kind == ns.PICKPOCKET and "pick" or "gather", npcID, rows[i][1]))
+      local qty = ns.QtyText(Tooltip.Qty(ns.SectionOf(kind), npcID, rows[i][1]))
       tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r" .. qty, ColoredPct(rows[i][2], quality), 1, 1, 1, 1, 1, 1)
     end
     added = true
@@ -413,5 +429,13 @@ function Tooltip:Init()
   end
   local f = CreateFrame("Frame")
   f:RegisterEvent("MODIFIER_STATE_CHANGED")
-  f:SetScript("OnEvent", function(_, _, key) OnModifierChanged(key) end)
+  pcall(f.RegisterEvent, f, "QUEST_LOG_UPDATE")
+  f:SetScript("OnEvent", function(_, event, key)
+    if event == "QUEST_LOG_UPDATE" then
+      -- Quest drops come and go with your quests.
+      if ns.RefreshSearch then ns.RefreshSearch() end
+    else
+      OnModifierChanged(key)
+    end
+  end)
 end

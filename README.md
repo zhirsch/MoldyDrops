@@ -32,7 +32,7 @@ In either search window, **Ctrl+click** an item to see every mob that gives it (
 
 When you loot, skin, gather or pick pocket something unlikely, your loot message gets a gold tag with the chance, like **(Lucky! 4.2%)**: Lucky under 10%, Very lucky under 2%, Incredibly lucky under 0.5%. The chance is the one the tooltip shows for that mob.
 
-Quest drops, which only drop while you're on the quest, are left out everywhere. Items the game calls quest items but that drop for everyone, like Gorilla Fang, are shown.
+Quest drops, which only drop while you're on the quest, are kept out of the drop chances and the "no items" chance. Instead, while one of your quests still needs the item, the tooltip and search windows show a separate **Quest** section with the chance per kill, like **Tough Wolf Meat 80%** on Young Wolves. These chances come from the 1.12 data and match your quests by their 1.12 quest IDs. Your own quest loot isn't recorded. Items the game calls quest items but that drop for everyone, like Gorilla Fang, are listed with the normal drops.
 
 Items that can come more than one at a time show the count range after the name, like **Mageweave Cloth x1-2**. Counts you record replace the 1.12 range.
 

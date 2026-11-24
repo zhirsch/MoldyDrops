@@ -125,6 +125,57 @@ public static class LootBuilder
         return result;
     }
 
+    // Quest drops (negative chance) in a loot table: item -> chance per kill
+    // while you need it. Each row rolls on its own; references in group 0 are
+    // followed (CMaNGOS rarely puts quest drops anywhere else).
+    static Dictionary<int, Dictionary<int, double>> questRefCache = new Dictionary<int, Dictionary<int, double>>();
+    static Dictionary<int, double> QuestExpand(List<LootRow> rows, int depth)
+    {
+        var result = new Dictionary<int, double>();
+        if (rows == null || depth > 8) return result;
+        foreach (var r in rows)
+        {
+            if (r.MinOrRef >= 0)
+            {
+                if (r.Chance < 0) AddProb(result, r.Item, -r.Chance / 100.0);
+            }
+            else if (r.Group == 0 && r.Chance > 0)
+            {
+                int refId = -r.MinOrRef;
+                Dictionary<int, double> inner;
+                if (!questRefCache.TryGetValue(refId, out inner))
+                {
+                    List<LootRow> rr; refLoot.TryGetValue(refId, out rr);
+                    questRefCache[refId] = inner = QuestExpand(rr, depth + 1);
+                }
+                int times = Math.Max(1, r.MaxCount);
+                foreach (var kv in inner) AddProb(result, kv.Key, 1 - Math.Pow(1 - r.Chance / 100.0 * kv.Value, times));
+            }
+        }
+        return result;
+    }
+
+    // Count ranges of the quest drops in a loot table (item -> (min, max)).
+    static Dictionary<int, Tuple<int, int>> QuestCounts(List<LootRow> rows, int depth)
+    {
+        var result = new Dictionary<int, Tuple<int, int>>();
+        if (rows == null || depth > 8) return result;
+        foreach (var r in rows)
+        {
+            if (r.MinOrRef < 0)
+            {
+                List<LootRow> rr; refLoot.TryGetValue(-r.MinOrRef, out rr);
+                foreach (var kv in QuestCounts(rr, depth + 1)) MergeCount(result, kv.Key, kv.Value.Item1, kv.Value.Item2);
+            }
+            else if (r.Chance < 0)
+            {
+                int min = Math.Max(1, r.MinOrRef);
+                MergeCount(result, r.Item, min, Math.Max(min, r.MaxCount));
+            }
+        }
+        return result;
+    }
+
     // Chance that a loot table gives no items at all. Quest-only drops
     // (negative chance) are left out, since they need the quest.
     static Dictionary<int, double> refNothingCache = new Dictionary<int, double>();
@@ -247,6 +298,7 @@ public static class LootBuilder
         var gatherOf = new Dictionary<int, Tuple<int, int>>(); // npc -> (skinning loot id, gather kind)
         var goldOf = new Dictionary<int, Tuple<int, int>>();   // npc -> (min copper, max copper)
         var pickOf = new Dictionary<int, int>();                // npc -> pickpocketing loot id
+        var questsFor = new Dictionary<int, SortedSet<int>>();  // item -> quests that need it
 
         Stream s = File.OpenRead(dumpPath);
         if (dumpPath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)) s = new GZipStream(s, CompressionMode.Decompress);
@@ -283,6 +335,18 @@ public static class LootBuilder
                             itemInfo[I(f[0])] = Tuple.Create(f[3] ?? "", I(f[5]));
                             if (I(f[1]) == 12) questClass.Add(I(f[0])); // class 12 = Quest
                         }
+                        break;
+                    case "quest_template":
+                        // ReqItemId1-4 (items to hand in) and ReqSourceId1-4 (items used along the way)
+                        foreach (var f in Tuples(line))
+                            foreach (int col in new[] { 40, 41, 42, 43, 48, 49, 50, 51 })
+                            {
+                                int item = I(f[col]);
+                                if (item <= 0) continue;
+                                SortedSet<int> qs;
+                                if (!questsFor.TryGetValue(item, out qs)) questsFor[item] = qs = new SortedSet<int>();
+                                qs.Add(I(f[0]));
+                            }
                         break;
                     case "creature_loot_template":
                     case "reference_loot_template":
@@ -522,6 +586,45 @@ public static class LootBuilder
             if (l != null) qtyContent.Add(l);
         }
 
+        // Quest drops, shown only while you need them: questDrops[npc] = { itemID,
+        // percent per kill, ... }; questFor[itemID] = { questID, ... }.
+        var questDropLines = new List<string>(); var qtyQuest = new List<string>();
+        var questItemsUsed = new SortedSet<int>();
+        var questDropCache = new Dictionary<int, List<KeyValuePair<int, double>>>();
+        foreach (var npc in openWorld.OrderBy(x => x))
+        {
+            int lootId;
+            if (!lootIdOf.TryGetValue(npc, out lootId)) continue;
+            List<KeyValuePair<int, double>> qd;
+            List<LootRow> rows; creatureLoot.TryGetValue(lootId, out rows);
+            if (!questDropCache.TryGetValue(lootId, out qd))
+            {
+                qd = QuestExpand(rows, 0).Where(kv => itemInfo.ContainsKey(kv.Key) && questsFor.ContainsKey(kv.Key))
+                    .OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).ToList();
+                questDropCache[lootId] = qd;
+            }
+            if (qd.Count == 0) continue;
+            var qs = new StringBuilder();
+            qs.Append('[').Append(npc).Append("]={");
+            for (int i = 0; i < qd.Count; i++)
+            {
+                if (i > 0) qs.Append(',');
+                double pct = qd[i].Value * 100;
+                qs.Append(qd[i].Key).Append(',').Append(pct.ToString(pct >= 1 ? "0.#" : "0.###", CultureInfo.InvariantCulture));
+                usedItems.Add(qd[i].Key); questItemsUsed.Add(qd[i].Key);
+            }
+            qs.Append("},");
+            questDropLines.Add(qs.ToString());
+            var ql = QtyLine(npc, qd.Select(kv => kv.Key), QuestCounts(rows, 0));
+            if (ql != null) qtyQuest.Add(ql);
+            Tuple<string, int, int, int> qm;
+            if (!namedMobs.Contains(npc) && mobInfo.TryGetValue(npc, out qm))
+            {
+                mobLines.Add(string.Format("[{0}]={{{1},{2},{3},{4}}},", npc, LuaStr(qm.Item1), qm.Item2, qm.Item3, qm.Item4));
+                namedMobs.Add(npc);
+            }
+        }
+
         // Which items are quest drops, for loot recorded in game: questOnly = items
         // that only ever drop while on a quest; questOk = Quest-class items that
         // drop for everyone (so the game's "quest item" flag mustn't hide them).
@@ -577,7 +680,16 @@ public static class LootBuilder
         foreach (var l in qtyPick) o.AppendLine(l);
         o.AppendLine("}, content = {");
         foreach (var l in qtyContent) o.AppendLine(l);
+        o.AppendLine("}, quest = {");
+        foreach (var l in qtyQuest) o.AppendLine(l);
         o.AppendLine("} }");
+        o.AppendLine("-- questDrops[npcID] = { itemID, percent per kill while you need it, ... }; questFor[itemID] = { questID, ... }");
+        o.AppendLine("ns.questDrops = {");
+        foreach (var l in questDropLines) o.AppendLine(l);
+        o.AppendLine("}");
+        o.Append("ns.questFor = {");
+        foreach (var id in questItemsUsed) o.Append('[').Append(id).Append("]={").Append(string.Join(",", questsFor[id])).Append("},");
+        o.AppendLine("}");
         o.AppendLine("ns.mobs = {");
         foreach (var l in mobLines) o.AppendLine(l);
         o.AppendLine("}");

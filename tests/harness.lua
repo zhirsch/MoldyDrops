@@ -107,6 +107,13 @@ C_Item = {
   GetItemInfo = function() return nil end,
   GetItemInfoInstant = function(id) return id, "Type", "Sub", "", 0, itemClass[id] or 7, 0 end,
 }
+-- Quest log: questLog[questID] = { complete = bool, objectives = { ... } }
+local questLog = {}
+C_QuestLog = {
+  IsOnQuest = function(id) return questLog[id] ~= nil end,
+  IsComplete = function(id) return questLog[id] and questLog[id].complete or false end,
+  GetQuestObjectives = function(id) return questLog[id] and questLog[id].objectives or {} end,
+}
 local errors = {}
 function geterrorhandler() return function(e) errors[#errors + 1] = tostring(e) end end
 function IsInInstance() return false end
@@ -872,6 +879,50 @@ Loot({ { guid = gG, item = 2799, name = "Gorilla Fang", q = 1, quest = true } })
 check("Gorilla Fang is recorded", MoldyDropsDB.own[1108] and MoldyDropsDB.own[1108][2799] == fangBefore + 1)
 local quest1 = next(ns.questOnly)
 check("items that only drop on a quest are quest items", quest1 and ns.IsQuestItem(quest1))
+
+-- quest drops: their own section, only while a quest needs the item
+local function sectionKinds(npcID)
+  local kinds = {}
+  for _, s in ipairs(ns.Tooltip.Sections(npcID)) do kinds[#kinds + 1] = s[1] end
+  return kinds
+end
+local function questRows(npcID)
+  for _, s in ipairs(ns.Tooltip.Sections(npcID)) do if s[1] == ns.QUEST then return s[2] end end
+end
+check("1.12 quest drop: Young Wolf gives Tough Wolf Meat 80% (quest 33)",
+  has(ns.questDrops[299], 750) and ns.questDrops[299][2] == 80 and ns.questFor[750][1] == 33)
+check("no quest section when not on the quest", questRows(299) == nil, table.concat(sectionKinds(299), ","))
+questLog[33] = { objectives = { { text = "Tough Wolf Meat: 3/8", type = "item", finished = false } } }
+local qr = questRows(299)
+check("quest section while the quest needs it", qr and qr[1][1] == 750 and qr[1][2] == 80)
+check("quest drops stay out of the normal drops", not has(ns.base[299], 750))
+local _, _, qnote = ns.Tooltip.Quest(299)
+check("quest section says it's per kill while on the quest", qnote:find("quest"))
+questLog[33].objectives[1].finished = true
+check("no quest section once the objective is done", questRows(299) == nil)
+questLog[33] = { objectives = {} } -- no matching objective: quest completeness decides
+check("no matching objective: shown until the quest is complete", questRows(299) ~= nil)
+questLog[33].complete = true
+check("no matching objective: hidden once complete", questRows(299) == nil)
+questLog[33] = { objectives = { { text = "Tough Wolf Meat: 0/8", type = "item", finished = false } } }
+ns.BuildDropIndex()
+local qm = ns.MobsDropping(750)
+local wolf
+for _, m in ipairs(qm) do if m.id == 299 then wolf = m end end
+check("item search lists quest drops you need", wolf and wolf.gather == ns.QUEST and wolf.pct == 80)
+ns.lootContext = { at = GetTime(), section = "drop", npcID = 299 }
+check("no luck tag for a likely quest drop", ns.LuckTag(750) == nil)
+questLog[33] = nil
+ns.BuildDropIndex()
+check("item search hides quest drops you don't need", #ns.MobsDropping(750) == 0)
+local rareQ, rareNpc
+for npc, list in pairs(ns.questDrops) do
+  for i = 1, #list - 1, 2 do if list[i + 1] < 5 then rareNpc, rareQ = npc, list[i] break end end
+  if rareQ then break end
+end
+ns.lootContext = { at = GetTime(), section = "drop", npcID = rareNpc }
+check("luck tag uses the quest chance", rareQ and ns.LuckTag(rareQ) ~= nil, tostring(rareNpc) .. " " .. tostring(rareQ))
+ns.lootContext = nil
 
 -- options (AceConfig): registered in the game's settings, opened by /drops options
 check("options table registered with AceConfig", type(aceRegistered.MoldyDrops) == "function")

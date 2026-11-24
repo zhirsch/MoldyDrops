@@ -21,7 +21,7 @@ function ns.BuildDropIndex()
     if itemID == ns.GREY then return end
     index[itemID] = index[itemID] or {}
     -- how many come at once, from the matching section
-    local section = via and "content" or (gatherKind == ns.PICKPOCKET and "pick") or (gatherKind and "gather") or "drop"
+    local section = via and "content" or (gatherKind and ns.SectionOf(gatherKind)) or "drop"
     local qmin, qmax = ns.Tooltip.Qty(section, via or npcID, itemID)
     table.insert(index[itemID], { npcID, pct, note, gatherKind, via, qmax and { qmin, qmax } or nil })
     local inside = not via and ns.Tooltip.Contents(itemID)
@@ -52,6 +52,11 @@ function ns.BuildDropIndex()
   for id in pairs(ns.gather or {}) do addGather(id) end
   for id in pairs(ns.db.ownGather) do addGather(id) end
   for id in pairs(ns.db.community.gather or {}) do addGather(id) end
+  -- Quest drops, while one of your quests needs them.
+  for id in pairs(ns.questDrops or {}) do
+    local kind, rows, note = ns.Tooltip.Quest(id)
+    for _, r in ipairs(rows or {}) do put(r[1], id, r[2], note, kind) end
+  end
   -- Pick pocketing, for rogues.
   if ns.IsRogue() then
     local seenPick = {}
@@ -149,6 +154,8 @@ local window = ns.CreateSearchWindow({
     GameTooltip:SetText(m.name)
     if m.gather == ns.PICKPOCKET then
       GameTooltip:AddLine("Pick Pocket: chance per mob pick pocketed.", 1, 1, 1, true)
+    elseif m.gather == ns.QUEST then
+      GameTooltip:AddLine("Quest drop: only drops while one of your quests needs it. Chance per kill.", 1, 1, 1, true)
     elseif m.gather then
       GameTooltip:AddLine((ns.GATHER_NAMES[m.gather] or "Gathering") .. " the corpse: chance per corpse gathered.", 1, 1, 1, true)
     end

@@ -23,7 +23,10 @@ local function ChanceOf(section, npcID, itemID)
     lists = { rows }
   else
     local rows, greys = ns.Tooltip.Choose(npcID)
-    lists = { rows, greys }
+    -- Quest drops too, whether or not the quest still needs more (the loot
+    -- message can arrive after the quest log already counts the last one).
+    local _, quest = ns.Tooltip.Quest(npcID, true)
+    lists = { rows, greys, quest }
   end
   for _, list in ipairs(lists) do
     for _, r in ipairs(list or {}) do

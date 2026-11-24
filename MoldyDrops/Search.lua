@@ -68,16 +68,17 @@ local window = ns.CreateSearchWindow({
     end
     for _, row in ipairs(rows) do out[#out + 1] = row end
 
-    -- Gathering and pick pocketing (rogues), each under its own heading.
+    -- Quest drops you need, gathering and pick pocketing (rogues), each under its own heading.
     for _, s in ipairs(ns.Tooltip.Sections(r.id)) do
       local kind, rows, note = s[1], s[2], s[3]
+      local section = ns.SectionOf(kind)
       out[#out + 1] = { " ", nil, nil }
       out[#out + 1] = { "|cffffd100" .. (ns.GATHER_NAMES[kind] or "Gathering") .. "|r  |cff999999" .. note .. "|r", nil, nil }
       for i = 1, math.min(ns.ALL_ROWS, #rows) do
         local name, quality = ns.ItemInfo(rows[i][1])
-        local qty = ns.QtyText(ns.Tooltip.Qty(kind == ns.PICKPOCKET and "pick" or "gather", r.id, rows[i][1]))
+        local qty = ns.QtyText(ns.Tooltip.Qty(section, r.id, rows[i][1]))
         out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r" .. qty, ns.ColoredPct(rows[i][2], quality),
-          { rows[i][1], rows[i][2], kind == ns.PICKPOCKET and "pick" or "gather" } }
+          { rows[i][1], rows[i][2], section } }
       end
     end
     return header, out
@@ -95,6 +96,9 @@ local window = ns.CreateSearchWindow({
         GameTooltip:AddLine("Chance per corpse gathered. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
       elseif kind == "pick" then
         GameTooltip:AddLine("Chance per mob pick pocketed. Ctrl+click to see every mob that gives it.", 0.6, 0.6, 0.6)
+      elseif kind == "quest" then
+        GameTooltip:AddLine("Only drops while one of your quests needs it. Chance per kill."
+          .. " Ctrl+click to see every mob that drops it.", 0.6, 0.6, 0.6, true)
       else
         GameTooltip:AddLine("Ctrl+click to see every mob that drops it.", 0.6, 0.6, 0.6)
       end

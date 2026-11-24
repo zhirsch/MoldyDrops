@@ -30,8 +30,60 @@ function ns.Print(msg) print(ns.PREFIX .. msg) end
 --   MoldyDropsDB.ownPick[npcID]    { kind = 5, [0] = mobs pick pocketed, [itemID] = times it gave it }
 --   MoldyDropsDB.community.pick    same shape as ownPick, from the website
 
-ns.GATHER_NAMES = { "Skinning", "Herbalism", "Mining", "Engineering", "Pick Pocket" }
+ns.GATHER_NAMES = { "Skinning", "Herbalism", "Mining", "Engineering", "Pick Pocket", "Quest" }
 ns.PICKPOCKET = 5
+ns.QUEST = 6 -- quest drops: only shown while one of your quests needs the item
+
+-- Which ns.qty / Tooltip.Qty section a section kind's counts are in.
+function ns.SectionOf(kind)
+  if kind == ns.PICKPOCKET then return "pick" end
+  if kind == ns.QUEST then return "quest" end
+  return "gather"
+end
+
+-- Is the player on a quest that still needs itemID? Uses the 1.12 quest links
+-- (ns.questFor). An objective naming the item decides; otherwise the quest
+-- counts as needing it until it's complete.
+local function OnQuest(questID)
+  if C_QuestLog and C_QuestLog.IsOnQuest then return C_QuestLog.IsOnQuest(questID) end
+  if GetQuestLogIndexByID then return (GetQuestLogIndexByID(questID) or 0) > 0 end
+  return false
+end
+local function QuestComplete(questID)
+  if C_QuestLog and C_QuestLog.IsComplete then return C_QuestLog.IsComplete(questID) end
+  if C_QuestLog and C_QuestLog.ReadyForTurnIn then return C_QuestLog.ReadyForTurnIn(questID) end
+  return false
+end
+function ns.NeedsQuestItem(itemID)
+  local quests = ns.questFor and ns.questFor[itemID]
+  if not quests then return false end
+  for _, questID in ipairs(quests) do
+    local ok, on = pcall(OnQuest, questID)
+    if ok and on then
+      local matched = false
+      local okObj, objectives = pcall(function()
+        return C_QuestLog and C_QuestLog.GetQuestObjectives and C_QuestLog.GetQuestObjectives(questID)
+      end)
+      if okObj and type(objectives) == "table" then
+        local names = { (ns.ItemInfo(itemID)), (ns.ClientItemInfo(itemID)) }
+        for _, obj in ipairs(objectives) do
+          local text = type(obj.text) == "string" and obj.text or ""
+          for _, name in ipairs(names) do
+            if name and name ~= "" and (obj.type == nil or obj.type == "item") and text:find(name, 1, true) then
+              if not obj.finished then return true end
+              matched = true
+            end
+          end
+        end
+      end
+      if not matched then
+        local okC, complete = pcall(QuestComplete, questID)
+        if not (okC and complete) then return true end
+      end
+    end
+  end
+  return false
+end
 
 -- Is Shift held? A focused edit box swallows the key, so the search box
 -- reports Shift itself through ns.shiftOverride.
