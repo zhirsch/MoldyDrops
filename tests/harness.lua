@@ -898,6 +898,23 @@ aceOpened = nil
 ns.ShowOptions()
 check("falls back to AceConfig's own window", aceOpened == "MoldyDrops")
 Settings.OpenToCategory = realOpen
+-- the tooltip setting doesn't limit the search window
+MoldyDropsDB.settings.topN = 2
+ns.ShowSearch("black drake", 7044)
+local sw2 = FrameNamed("MoldyDropsSearchFrame")
+local shownDrops = 0
+for _, row in ipairs(sw2.detail.rows) do
+  if row.shown and type(row.data) == "table" and row.data[3] == nil and type(row.data[1]) == "number" then
+    shownDrops = shownDrops + 1
+  end
+end
+local allDrops = #ns.Tooltip.Choose(7044)
+check("search window shows every drop even with the tooltip set to 2", allDrops > 2 and shownDrops == allDrops,
+  shownDrops .. " of " .. allDrops)
+check("while the tooltip shows 2", dropItemRows(7044) == 2)
+MoldyDropsDB.settings.topN = 5
+sw2:Hide()
+
 -- reset clears everything you recorded (last, since it wipes the test data)
 SlashCmdList.MOLDYDROPS("reset")
 check("reset without confirm keeps data", next(MoldyDropsDB.own) ~= nil)

@@ -60,7 +60,7 @@ local window = ns.CreateSearchWindow({
     }
     local expand = ns.ShiftHeld()
     local out = {}
-    local rows, source, expandable = ns.Tooltip.DropSection(r.id, ns.WindowN(), expand)
+    local rows, source, expandable = ns.Tooltip.DropSection(r.id, ns.ALL_ROWS, expand)
     if source then
       header.source = "Source: " .. source .. ((expandable and not expand) and "  ·  hold Shift for more" or "")
     else
@@ -73,7 +73,7 @@ local window = ns.CreateSearchWindow({
       local kind, rows, note = s[1], s[2], s[3]
       out[#out + 1] = { " ", nil, nil }
       out[#out + 1] = { "|cffffd100" .. (ns.GATHER_NAMES[kind] or "Gathering") .. "|r  |cff999999" .. note .. "|r", nil, nil }
-      for i = 1, math.min(ns.WindowN(), #rows) do
+      for i = 1, math.min(ns.ALL_ROWS, #rows) do
         local name, quality = ns.ItemInfo(rows[i][1])
         local qty = ns.QtyText(ns.Tooltip.Qty(kind == ns.PICKPOCKET and "pick" or "gather", r.id, rows[i][1]))
         out[#out + 1] = { ns.QualityHex(quality or 1) .. name .. "|r" .. qty, ns.ColoredPct(rows[i][2], quality),

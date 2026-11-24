@@ -4,7 +4,6 @@ ns.PREFIX = "|cffffd100MoldyDrops:|r "
 ns.MIN_SAMPLE = 20   -- kills needed before observed rates replace the 1.12 estimate
 ns.TOP_N_DEFAULT = 5 -- drop rows in the tooltip (setting: settings.topN)
 ns.TOP_N_MAX = 10    -- the bundled 1.12 data keeps each mob's top 10
-ns.WINDOW_N = 10     -- at least this many rows in the /drops search window
 
 -- How many drop rows the tooltip shows.
 function ns.TopN()
@@ -12,8 +11,8 @@ function ns.TopN()
   return math.max(1, math.min(ns.TOP_N_MAX, math.floor(n)))
 end
 
--- How many drop rows the search window shows (never fewer than the tooltip).
-function ns.WindowN() return math.max(ns.WINDOW_N, ns.TopN()) end
+-- The search windows always list every known drop; the setting is only for tooltips.
+ns.ALL_ROWS = math.huge
 
 function ns.Print(msg) print(ns.PREFIX .. msg) end
 

@@ -38,7 +38,7 @@ function Options.Table()
       topN = {
         type = "range", order = 12, width = "double",
         name = "Items shown in the tooltip",
-        desc = "How many drops the tooltip lists. The search window always shows at least 10. "
+        desc = "How many drops the tooltip lists. The search windows always show every drop. "
           .. "The bundled 1.12 data keeps each mob's top " .. ns.TOP_N_MAX .. ".",
         min = 1, max = ns.TOP_N_MAX, step = 1,
         get = function() return ns.TopN() end,
