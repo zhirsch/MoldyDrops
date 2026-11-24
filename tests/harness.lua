@@ -770,10 +770,33 @@ check("loot context remembers the mob and action", ns.lootContext and ns.lootCon
 local filter = chatFilters.CHAT_MSG_LOOT
 check("chat filter registered for loot messages", type(filter) == "function")
 local _, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(805, "Small Red Pouch") .. ".")
-check("0.1% drop: Incredibly lucky! in gold, right after the link",
-  res == "You receive loot: " .. link(805, "Small Red Pouch") .. " |cffffd100(Incredibly lucky! 0.10%)|r.", res)
+check("0.1% drop: [chance] (Incredibly lucky!) in orange, right after the link",
+  res == "You receive loot: " .. link(805, "Small Red Pouch") .. " |cffff8000[0.10%] (Incredibly lucky!)|r.", res)
 _, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(159, "Refreshing Spring Water") .. "x2.")
-check("6.4% drop: Lucky! with the chance (stack message too)", res and res:find("(Lucky! 6.4%)|rx2.", 1, true), res)
+check("6.4% drop: gold [6.4%] (Lucky!) (stack message too)",
+  res and res:find("|cffffd100[6.4%] (Lucky!)|rx2.", 1, true), res)
+check("chance colors: white 10%+, gold under 10%, gradient under 2%, grey items grey",
+  ns.ChanceColor(45, 1) == "ffffff" and ns.ChanceColor(10, 1) == "ffffff" and ns.ChanceColor(5, 2) == "ffd100"
+  and ns.ChanceColor(2, 1) == "ffd100" and ns.ChanceColor(0.1, 1) == "ff8000" and ns.ChanceColor(0.01, 1) == "ff8000"
+  and ns.ChanceColor(0.5, 1) ~= "ffd100" and ns.ChanceColor(0.5, 1) ~= "ff8000" and ns.ChanceColor(1, 0) == "9d9d9d",
+  ns.ChanceColor(0.5, 1))
+local likely = ns.Tooltip.Choose(38)[1] -- the Thug's most likely drop
+Loot({ { guid = guid(38, 2), item = likely[1], name = "Likely", q = 1 } })
+local likelyMsg = "You receive loot: " .. link(likely[1], "Likely") .. "."
+local same0, res0 = filter(nil, "CHAT_MSG_LOOT", likelyMsg)
+check("likely item: unchanged by default", same0 == false and res0 == nil)
+SlashCmdList.MOLDYDROPS("chance")
+check("/drops chance turns on the always-show option", MoldyDropsDB.settings.chanceAlways == true)
+_, res = filter(nil, "CHAT_MSG_LOOT", likelyMsg)
+check("always-show: likely item gets a white [chance], no label",
+  res == "You receive loot: " .. link(likely[1], "Likely") .. " |cffffffff[" .. ns.FormatPct(likely[2]) .. "]|r.", res)
+MoldyDropsDB.settings.luck = false
+Loot({ { guid = gThug, item = 805, name = "Small Red Pouch", q = 1 } })
+_, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(805, "Small Red Pouch") .. ".")
+check("always-show with luck tags off: colored chance, no label", res and res:find("|cffff8000[0.10%]|r.", 1, true), res)
+MoldyDropsDB.settings.luck = true
+SlashCmdList.MOLDYDROPS("chance")
+check("/drops chance turns it back off", not MoldyDropsDB.settings.chanceAlways)
 local same, unchanged = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(752, "Red Burlap Bandana") .. ".")
 check("item not from this corpse: unchanged", same == false and unchanged == nil)
 _, res = filter(nil, "CHAT_MSG_LOOT", "Bob receives loot: " .. link(805, "Small Red Pouch") .. ".")

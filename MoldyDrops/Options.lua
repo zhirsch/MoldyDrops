@@ -55,9 +55,18 @@ function Options.Table()
       luck = {
         type = "toggle", order = 21, width = "full",
         name = "Luck tags on loot messages",
-        desc = "Adds (Lucky! 4.2%) to your loot messages when an item was unlikely.",
+        desc = "Adds the chance and (Lucky!) to your loot messages when an item was unlikely (under 10%), "
+          .. "like [4.2%] (Lucky!). The chance is gold, shading to orange the rarer it was.",
         get = function() return Saved().luck end,
         set = function(_, v) Saved().luck = v end,
+      },
+      chanceAlways = {
+        type = "toggle", order = 21.5, width = "full",
+        name = "Always show the drop chance on loot messages",
+        desc = "Adds the chance to every loot message, like [45%], not just unlikely ones. "
+          .. "White for likely items, grey for grey items.",
+        get = function() return Saved().chanceAlways end,
+        set = function(_, v) Saved().chanceAlways = v end,
       },
       debug = {
         type = "toggle", order = 22, width = "full",

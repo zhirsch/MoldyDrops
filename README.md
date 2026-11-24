@@ -17,7 +17,8 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops options` | Opens MoldyDrops in the game's Options > AddOns panel: tooltip on/off, how many items the tooltip shows (1-10; the search windows always show every drop), dungeons and raids, luck tags, debug |
 | `/drops stats` | Prints the state of the database |
 | `/drops tooltip` | Turns the tooltip on or off |
-| `/drops luck` | Turns the luck tags on your loot messages on or off |
+| `/drops luck` | Turns the `[4.2%] (Lucky!)` tags on unlikely loot on or off |
+| `/drops chance` | Shows the drop chance on every loot message, or only on unlikely loot |
 | `/drops debug` | Prints what each loot window recorded, to check that recording works |
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
 | `/drops reset` | Deletes the loot, gathering and pick pocketing you've recorded |
@@ -30,7 +31,15 @@ Mobs you can skin, herb, mine or salvage with engineering get a second section i
 
 In either search window, **Ctrl+click** an item to see every mob that gives it (`/drops item`), or Ctrl+click a mob to see its drops (`search`). The **Back** button returns to the previous search. `/drops item` covers drops, gathering, pick pocketing (on a rogue), and items inside containers that mobs drop. For those, the chance is the container's chance times the item's chance inside it. `/drops item` only knows each mob's top 10 drops from the bundled 1.12 data (plus everything recorded or imported), so very rare world drops may be missing.
 
-When you loot, skin, gather or pick pocket something unlikely, your loot message gets a gold tag with the chance, like **(Lucky! 4.2%)**: Lucky under 10%, Very lucky under 2%, Incredibly lucky under 0.5%. The chance is the one the tooltip shows for that mob.
+When you loot, skin, gather or pick pocket something unlikely, your loot message gets the chance and a luck label right after the item, like `You receive loot: [Thick Leather] [4.2%] (Lucky!)`. The labels are Lucky under 10%, Very lucky under 2% and Incredibly lucky under 0.5%. The chance is the one the tooltip shows for that mob.
+
+The chance's color shows how rare the item was:
+- white for 10% and up
+- gold under 10%
+- gold shading to orange from 2% down to 0.1%
+- grey for grey items
+
+To see the chance on every loot message, not just unlucky ones, turn on **Always show the drop chance** in the options (or `/drops chance`).
 
 Quest drops, which only drop while you're on the quest, are kept out of the drop chances and the "no items" chance. Instead, while one of your quests still needs the item, the tooltip and search windows show a separate **Quest** section with the chance per kill, like **Tough Wolf Meat 80%** on Young Wolves. These chances come from the 1.12 data and match your quests by their 1.12 quest IDs. Your own quest loot isn't recorded. Items the game calls quest items but that drop for everyone, like Gorilla Fang, are listed with the normal drops.
 

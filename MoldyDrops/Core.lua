@@ -254,7 +254,8 @@ local HELP = {
   "|cffffffff/drops options|r - open the options window",
   "|cffffffff/drops stats|r - show the state of the database",
   "|cffffffff/drops tooltip|r - turn the tooltip on or off",
-  "|cffffffff/drops luck|r - turn the (Lucky!) tags on loot messages on or off",
+  "|cffffffff/drops luck|r - turn the [4.2%] (Lucky!) tags on unlikely loot on or off",
+  "|cffffffff/drops chance|r - always show the drop chance on loot messages, or only when lucky",
   "|cffffffff/drops debug|r - print what each loot window recorded (to check recording)",
   "|cffffffff/drops instances|r - also show the tooltip inside dungeons and raids",
   "|cffffffff/drops reset|r - delete the loot you've recorded",
@@ -286,6 +287,10 @@ SlashCmdList.MOLDYDROPS = function(msg)
   elseif cmd == "luck" then
     db.settings.luck = not db.settings.luck
     ns.Print(db.settings.luck and "luck tags on loot messages enabled" or "luck tags on loot messages disabled")
+  elseif cmd == "chance" then
+    db.settings.chanceAlways = not db.settings.chanceAlways
+    ns.Print(db.settings.chanceAlways and "drop chance shown on every loot message"
+      or "drop chance shown only on unlikely loot (with /drops luck)")
   elseif cmd == "instances" then
     db.settings.openWorldOnly = not db.settings.openWorldOnly
     ns.Print(db.settings.openWorldOnly and "open world only" or "showing in instances too")
