@@ -80,6 +80,22 @@ function ns.ItemInfo(itemID)
   return "item:" .. itemID, 1
 end
 
+-- Quest items are left out of all loot tables. The bundled 1.12 data already
+-- has none; this catches recorded and imported ones. isQuestFlag is the loot
+-- window's "quest item" flag when known; otherwise the item class decides
+-- (class 12 = Quest).
+local questCache = {}
+function ns.IsQuestItem(itemID, isQuestFlag)
+  if isQuestFlag then questCache[itemID] = true return true end
+  if questCache[itemID] ~= nil then return questCache[itemID] end
+  local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+  if not getInstant then return false end
+  local classID = select(6, getInstant(itemID))
+  if classID == nil then return false end -- unknown yet; don't cache
+  questCache[itemID] = classID == ((Enum and Enum.ItemClass and Enum.ItemClass.Questitem) or 12)
+  return questCache[itemID]
+end
+
 -- WoW Forever uses the newer namespaced API (C_Spell, C_Item) and drops some
 -- old globals, so look functions up in both places.
 function ns.SpellName(spellID)

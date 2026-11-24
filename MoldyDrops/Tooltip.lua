@@ -84,7 +84,7 @@ local function ObservedRows(e)
   local rows, greys = {}, {}
   local noGrey = 1
   for itemID, c in pairs(e) do
-    if type(itemID) == "number" and itemID > 0 then -- skips [0], negatives and e.q
+    if type(itemID) == "number" and itemID > 0 and not ns.IsQuestItem(itemID) then -- skips [0], negatives, e.q, quest items
       local _, quality = ns.ItemInfo(itemID)
       if quality == 0 then
         greys[#greys + 1] = { itemID, 100 * c / kills }
@@ -151,7 +151,9 @@ local function Section(own, comm, base, unit)
   local function observed()
     local rows = {}
     for itemID, c in pairs(obs) do
-      if type(itemID) == "number" and itemID > 0 then rows[#rows + 1] = { itemID, 100 * c / obs[0] } end
+      if type(itemID) == "number" and itemID > 0 and not ns.IsQuestItem(itemID) then
+        rows[#rows + 1] = { itemID, 100 * c / obs[0] }
+      end
     end
     table.sort(rows, ByRate)
     return rows

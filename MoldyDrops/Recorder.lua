@@ -236,7 +236,11 @@ local function SessionEntry(s)
 end
 
 -- An item came out of the session's mob (counted once per item per mob).
-local function AddItem(s, itemID, count, name, quality)
+local function AddItem(s, itemID, count, name, quality, isQuest)
+  if ns.IsQuestItem(itemID, isQuest) then
+    Debug(("  %s: %s (quest item, not recorded)"):format(MobName(s.guid), name or ns.ItemInfo(itemID)))
+    return
+  end
   count = math.max(1, tonumber(count) or 1)
   if name and not ns.db.items[itemID] then ns.db.items[itemID] = { name, quality or 1 } end
   s.counts[itemID] = math.max(s.counts[itemID] or 0, count)
@@ -269,8 +273,8 @@ local function ReadSlots(s)
       local link = GetLootSlotLink(slot)
       local itemID = link and tonumber(link:match("item:(%d+)"))
       if itemID then
-        local _, name, slotQty, _, quality = GetLootSlotInfo(slot)
-        AddItem(s, itemID, qty or slotQty, name, quality)
+        local _, name, slotQty, _, quality, _, isQuest = GetLootSlotInfo(slot)
+        AddItem(s, itemID, qty or slotQty, name, quality, isQuest)
       end
     end
   end

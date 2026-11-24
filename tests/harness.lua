@@ -83,7 +83,11 @@ local spellNames = { [8613] = "Skinning", [2575] = "Mining", [2366] = "Herb Gath
 GetSpellInfo = nil
 GetItemInfo = nil
 C_Spell = { GetSpellName = function(id) return spellNames[id] end }
-C_Item = { GetItemInfo = function() return nil end }
+local itemClass = { [884] = 12, [1357] = 12, [55555] = 12 } -- quest items; everything else trade goods
+C_Item = {
+  GetItemInfo = function() return nil end,
+  GetItemInfoInstant = function(id) return id, "Type", "Sub", "", 0, itemClass[id] or 7, 0 end,
+}
 local errors = {}
 function geterrorhandler() return function(e) errors[#errors + 1] = tostring(e) end end
 function IsInInstance() return false end
@@ -113,7 +117,7 @@ local playerClass = "WARRIOR"
 function UnitClass() return "Class", playerClass end
 function GetLootSlotType(slot) return loot[slot].money and 2 or 1 end
 function GetLootSlotLink(slot) return loot[slot].item and ("|cffffffff|Hitem:" .. loot[slot].item .. "::::::::|h[x]|h|r") end
-function GetLootSlotInfo(slot) return nil, loot[slot].name, 1, nil, loot[slot].q end
+function GetLootSlotInfo(slot) return nil, loot[slot].name, 1, nil, loot[slot].q, false, loot[slot].quest end
 function IsFishingLoot() return false end
 local shift = false
 function IsShiftKeyDown() return shift end
@@ -810,6 +814,33 @@ local printed = false
 for i = before + 1, #out do if out[i]:find("[debug]", 1, true) then printed = true end end
 check("/drops debug prints each loot window", printed)
 SlashCmdList.MOLDYDROPS("debug")
+
+-- quest items are left out
+local function has(list, id)
+  for i = 1, #(list or {}) - 1, 2 do if list[i] == id then return true end end
+  return false
+end
+check("1.12 data has no quest items (Captain Sander's Treasure Map)", not has(ns.base[127], 1357) and has(ns.base[127], 1468))
+local gQ = guid(299, 50)
+local meatBefore = w[750]
+Loot({ { guid = gQ, item = 750, name = "Tough Wolf Meat", q = 1 },
+       { guid = gQ, item = 55555, name = "Quest Thing", q = 1, quest = true } })
+check("quest item (loot window flag) not recorded", w[55555] == nil and w[750] == meatBefore + 1, w[750])
+local gQ2 = guid(299, 51)
+units.target = { guid = gQ2, dead = true }
+loot = {}
+Fire("LOOT_READY")
+chatLoot(884, "Ghoul Rib") -- quest item seen only in chat: item class decides
+Fire("LOOT_CLOSED")
+units.target = nil
+check("quest item (from chat) not recorded", w[884] == nil)
+check("corpse with only quest items counts as no items", w[-2] == 2, w[-2])
+MoldyDropsDB.own[999001] = { [0] = 30, [884] = 10, [2589] = 6 } -- recorded before this change
+local qrows = ns.Tooltip.Choose(999001)
+local hasRib = false
+for _, r in ipairs(qrows) do if r[1] == 884 then hasRib = true end end
+check("quest items already recorded are hidden", not hasRib and qrows[1] and qrows[1][1] == 2589)
+MoldyDropsDB.own[999001] = nil
 
 -- reset clears everything you recorded (last, since it wipes the test data)
 SlashCmdList.MOLDYDROPS("reset")

@@ -94,12 +94,16 @@ public static class LootBuilder
         acc[item] = acc.TryGetValue(item, out prev) ? 1 - (1 - prev) * (1 - p) : p;
     }
 
+    // Quest items (item class 12) and quest-only rows (negative chance) are left out everywhere.
+    static HashSet<int> questItems = new HashSet<int>();
+    static bool Keep(LootRow r) { return r.Chance >= 0 && !(r.MinOrRef >= 0 && questItems.Contains(r.Item)); }
+
     static Dictionary<int, double> Expand(List<LootRow> rows, int depth)
     {
         var result = new Dictionary<int, double>();
         if (rows == null || depth > 8) return result;
 
-        foreach (var grp in rows.GroupBy(r => r.Group))
+        foreach (var grp in rows.Where(Keep).GroupBy(r => r.Group))
         {
             var list = grp.ToList();
             if (grp.Key == 0)
@@ -128,7 +132,7 @@ public static class LootBuilder
         double nothing = 1;
         foreach (var grp in rows.GroupBy(r => r.Group))
         {
-            var list = grp.Where(r => r.Chance >= 0).ToList();
+            var list = grp.Where(Keep).ToList();
             if (list.Count == 0) continue;
             if (grp.Key == 0)
             {
@@ -190,7 +194,7 @@ public static class LootBuilder
     {
         var result = new Dictionary<int, Tuple<int, int>>();
         if (rows == null || depth > 8) return result;
-        foreach (var r in rows)
+        foreach (var r in rows.Where(Keep))
         {
             if (r.MinOrRef < 0)
             {
@@ -272,7 +276,11 @@ public static class LootBuilder
                         }
                         break;
                     case "item_template":
-                        foreach (var f in Tuples(line)) itemInfo[I(f[0])] = Tuple.Create(f[3] ?? "", I(f[5]));
+                        foreach (var f in Tuples(line))
+                        {
+                            itemInfo[I(f[0])] = Tuple.Create(f[3] ?? "", I(f[5]));
+                            if (I(f[1]) == 12) questItems.Add(I(f[0])); // class 12 = Quest
+                        }
                         break;
                     case "creature_loot_template":
                     case "reference_loot_template":
