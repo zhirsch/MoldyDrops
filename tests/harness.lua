@@ -775,6 +775,37 @@ local sl0 = ns.Tooltip.SectionLines(1, { { 2318, 50 } }, 157, 10, false)
 check("section lines: count breakdown on Shift, one line otherwise",
   #sl == 3 and sl[2][3][3] == "count" and sl[2][3][5] == 1 and math.abs(sl[2][3][2] - 25) < 1e-9 and #sl0 == 1
   and sl0[1][1]:find("x1-2", 1, true), #sl .. " " .. #sl0)
+
+-- end to end: the real tooltip for a skinnable mob (NPC 157), Shift up and down
+local captured
+local oldDouble = GameTooltip.AddDoubleLine
+GameTooltip.AddDoubleLine = function(_, l, r) captured[#captured + 1] = { l, r } end
+local function tip(npcID, down)
+  captured, shift = {}, down
+  units.mouseover = { guid = guid(npcID, 998) }
+  GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
+  units.mouseover, shift = nil, false
+  return captured
+end
+local function skinLines(lines)
+  local inSkin, out = false, {}
+  for _, l in ipairs(lines) do
+    if l[1] == "Skinning" then inSkin = true
+    elseif inSkin and l[1]:find("Light Leather", 1, true) then out[#out + 1] = l end
+  end
+  return out
+end
+local _, gatherRows = ns.Tooltip.Gather(157)
+local leatherPct
+for _, r in ipairs(gatherRows) do if r[1] == 2318 then leatherPct = r[2] end end
+local up, down = skinLines(tip(157, false)), skinLines(tip(157, true))
+check("skinning tooltip without Shift: one Light Leather x1-2 line",
+  #up == 1 and up[1][1]:find("x1-2", 1, true) and up[1][1]:find("(Shift)", 1, true), #up)
+check("skinning tooltip with Shift: total line, then x1 and x2 at half each",
+  #down == 3 and down[2][1]:find("x1", 1, true) and down[3][1]:find("x2", 1, true)
+  and down[2][2] == ns.ColoredPct(leatherPct / 2, 1) and down[3][2] == ns.ColoredPct(leatherPct / 2, 1),
+  #down .. " " .. tostring(leatherPct))
+GameTooltip.AddDoubleLine = oldDouble
 end
 
 -- recorded stacks override the 1.12 range
@@ -860,6 +891,18 @@ now = now + 10
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "x", 8613)
 Loot({ { guid = guid(113, 5), item = 2318, name = "Light Leather", q = 1 } })
 check("skinning sets a gathering context", ns.lootContext.section == "gather" and ns.lootContext.npcID == 113)
+now = now + 10
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "x", 8613)
+Loot({ { guid = guid(113, 6), item = 2318, name = "Light Leather", q = 1, qty = 2 } })
+do
+  local sk = MoldyDropsDB.ownGather[113]
+  check("skinning a stack of 2 is tallied in the gathering record (not the drops)",
+    sk and sk.c and sk.c[2318] and sk.c[2318][2] == 1 and sk.c[2318][1] == 1 and sk.q[2318][2] == 2
+    and not (MoldyDropsDB.own[113] and MoldyDropsDB.own[113].c and MoldyDropsDB.own[113].c[2318]),
+    sk and sk.c and sk.c[2318] and tostring(sk.c[2318][1]) .. "/" .. tostring(sk.c[2318][2]))
+  local gc = ns.Tooltip.CountChances("gather", 113, 2318, 100)
+  check("gathering count chances use the recorded tally", gc and #gc == 2 and gc[1][2] == 50 and gc[2][2] == 50)
+end
 _, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(2318, "Light Leather") .. ".")
 check("common gathering result (80%): no tag", res == nil)
 now = now + 10
