@@ -10,10 +10,7 @@ A small site where anyone can contribute loot data recorded in the game, and any
 
 ## Architecture
 
-The recommended setup is **Cloudflare Workers + D1 (SQLite) + static pages**.
-
-- The free tier covers a hobby project, there's no server to maintain, and the API and pages deploy as one project.
-- Any small host with SQLite works the same way, for example a Node or Python app on a VPS or Fly.io. Nothing below depends on Cloudflare.
+The server is **Rust (axum + sqlx) with Postgres**, in [`server/`](../server/README.md), serving the API and the static pages together. It runs on any host with Postgres, such as a VPS or Fly.io.
 
 ```
 browser ──► static page (upload box, copy-snapshot button, mob search)

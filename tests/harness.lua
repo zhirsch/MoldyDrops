@@ -882,6 +882,25 @@ local str2 = ns.Codec.Export(MoldyDropsDB, "0.1.0", 16001)
 local text2 = ns.Codec.Base64Decode(str2:sub(6))
 check("export Q token", text2:find("Q:4338:1:3", 1, true) ~= nil, text2:match("N 660[^\n]*"))
 check("export C tokens", text2:find("C:4338:1:2 C:4338:3:1", 1, true) ~= nil, text2:match("N 660[^\n]*"))
+-- server/tests/fixtures/addon-export.txt is a copy of this string (the server's tests parse it)
+js.global.MD_EXPORT = str2
+-- server/tests/fixtures/server-snapshot.txt is written by the server's tests (two uploads combined)
+do
+  local fx = js.global.SRC.SERVER_SNAPSHOT
+  check("server snapshot fixture present", type(fx) == "string", type(fx))
+  if type(fx) == "string" then
+    local sc, sitems, scount, smobs = ns.Codec.ParseSnapshot(fx)
+    local s6, s660 = sc and sc.npcs[6], sc and sc.npcs[660]
+    check("server snapshot parses", sc and scount == 3 and sc.contributors == 2, sitems)
+    check("server snapshot sums drops", s6 and s6[0] == 10 and s6[159] == 3 and s6[755] == 2 and s6[4536] == 3 and s6[-1] == 3 and s6[-2] == 1)
+    check("server snapshot gold", s6 and s6[-3] == 5 and s6[-4] == 550 and s6[-5] == 50 and s6[-6] == 200)
+    check("server snapshot stacks", s660 and s660[0] == 12 and s660[4338] == 9 and s660.q[4338][1] == 1 and s660.q[4338][2] == 4
+      and s660.c[4338][1] == 5 and s660.c[4338][2] == 2 and s660.c[4338][3] == 1 and s660.c[4338][4] == 1 and s660[1] == nil)
+    check("server snapshot gathering", sc and sc.gather[6] and sc.gather[6][0] == 6 and sc.gather[6][2318] == 5
+      and sc.gather[6].c[2318][1] == 3 and sc.pick[6] and sc.pick[6][159] == 1 and sc.gather[274400][88888] == 1)
+    check("server snapshot names", sitems[4536] and sitems[4536][1] == "Shiny Red Apple" and smobs[274300] and smobs[274300][1] == "Coldrasp")
+  end
+end
 local snap2 = "!MD1!" .. js.global:btoa("MD1 S 1795400000 2\nN 660 40 4338:20 Q:4338:1:4 C:4338:1:15 C:4338:4:5 $:40:800:5:30\nS 157 1 30 2318:30 Q:2318:1:3\n")
 local comm2 = ns.Codec.ParseSnapshot(snap2)
 local c660 = comm2.npcs[660]

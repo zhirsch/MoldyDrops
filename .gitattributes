@@ -1,0 +1,2 @@
+# Exchange-format fixtures are compared byte for byte by both test suites.
+server/tests/fixtures/* text eol=lf
