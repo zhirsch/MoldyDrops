@@ -174,6 +174,7 @@ local HELP = {
   "|cffffffff/drops stats|r - show the state of the database",
   "|cffffffff/drops tooltip|r - turn the tooltip on or off",
   "|cffffffff/drops luck|r - turn the (Lucky!) tags on loot messages on or off",
+  "|cffffffff/drops debug|r - print what each loot window recorded (to check recording)",
   "|cffffffff/drops instances|r - also show the tooltip inside dungeons and raids",
   "|cffffffff/drops reset|r - delete the loot you've recorded",
 }
@@ -196,6 +197,9 @@ SlashCmdList.MOLDYDROPS = function(msg)
   elseif cmd == "tooltip" then
     db.settings.enabled = not db.settings.enabled
     ns.Print(db.settings.enabled and "tooltip enabled" or "tooltip disabled")
+  elseif cmd == "debug" then
+    db.settings.debug = not db.settings.debug
+    ns.Print(db.settings.debug and "debug on: each loot window prints what was recorded" or "debug off")
   elseif cmd == "luck" then
     db.settings.luck = not db.settings.luck
     ns.Print(db.settings.luck and "luck tags on loot messages enabled" or "luck tags on loot messages disabled")

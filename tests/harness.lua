@@ -153,6 +153,7 @@ local function Loot(items)
   loot = items
   Fire("LOOT_OPENED")
   loot = {}
+  Fire("LOOT_CLOSED")
 end
 
 -- 1: killed and looted (candle + money)
@@ -735,7 +736,7 @@ check("snapshot Q on S records", comm2.gather[157].q and comm2.gather[157].q[231
 local function link(id, name) return "|cffffffff|Hitem:" .. id .. "::::::::|h[" .. name .. "]|h|r" end
 local gThug = guid(38, 1)
 Loot({ { guid = gThug, item = 805, name = "Small Red Pouch", q = 1 }, { guid = gThug, item = 159, name = "Refreshing Spring Water", q = 1 } })
-check("loot context remembers the mob and action", ns.lootContext and ns.lootContext.section == "drop" and ns.lootContext.items[805] == 38)
+check("loot context remembers the mob and action", ns.lootContext and ns.lootContext.section == "drop" and ns.lootContext.npcID == 38)
 local filter = chatFilters.CHAT_MSG_LOOT
 check("chat filter registered for loot messages", type(filter) == "function")
 local _, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(805, "Small Red Pouch") .. ".")
@@ -758,10 +759,57 @@ check("old loot context isn't used", res == nil)
 now = now + 10
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "x", 8613)
 Loot({ { guid = guid(113, 5), item = 2318, name = "Light Leather", q = 1 } })
-check("skinning sets a gathering context", ns.lootContext.section == "gather" and ns.lootContext.items[2318] == 113)
+check("skinning sets a gathering context", ns.lootContext.section == "gather" and ns.lootContext.npcID == 113)
 _, res = filter(nil, "CHAT_MSG_LOOT", "You receive loot: " .. link(2318, "Light Leather") .. ".")
 check("common gathering result (80%): no tag", res == nil)
 now = now + 10
+
+-- fast autoloot: the window is empty by the time the addon looks
+local function chatLoot(id, name, count)
+  Fire("CHAT_MSG_LOOT", "You receive loot: " .. link(id, name) .. (count and ("x" .. count) or "") .. ".")
+end
+now = now + 10
+local gW1 = guid(299, 1) -- Diseased Young Wolf
+units.target = { guid = gW1, dead = true }
+loot = {}
+Fire("LOOT_READY")
+chatLoot(750, "Tough Wolf Meat")
+Fire("LOOT_CLOSED")
+units.target = nil
+local w = MoldyDropsDB.own[299]
+check("emptied window: kill credited to your dead target", w and w[0] == 1, w and w[0])
+check("emptied window: item picked up from the loot chat line", w and w[750] == 1)
+check("emptied window: not counted as no items", w and (w[-2] or 0) == 0)
+
+local gW2 = guid(299, 2)
+loot = { { guid = gW2, item = 750, name = "Tough Wolf Meat", q = 1 }, { guid = gW2, item = 7073, name = "Broken Fang", q = 0 } }
+Fire("LOOT_READY") -- read before autoloot takes it
+loot = {}
+Fire("LOOT_OPENED") -- window already empty
+chatLoot(750, "Tough Wolf Meat")
+chatLoot(7073, "Broken Fang")
+Fire("LOOT_CLOSED")
+check("LOOT_READY + LOOT_OPENED + chat: one kill, each item once", w[0] == 2 and w[750] == 2 and w[7073] == 1, w[0] .. " " .. w[750])
+check("grey corpse counted once", (w[-1] or 0) == 1)
+
+local gW3 = guid(299, 3)
+units.target = { guid = gW3, dead = true }
+loot = {}
+Fire("LOOT_OPENED")
+Fire("CHAT_MSG_LOOT", "Bob receives loot: " .. link(750, "Tough Wolf Meat") .. ".")
+Fire("LOOT_CLOSED")
+units.target = nil
+check("other players' loot lines aren't credited", w[0] == 3 and w[750] == 2 and w[-2] == 1, w[750])
+chatLoot(750, "Tough Wolf Meat") -- long after: no session
+check("loot lines outside a loot window are ignored", w[750] == 2)
+
+SlashCmdList.MOLDYDROPS("debug")
+local before = #out
+Loot({ { guid = guid(299, 4), item = 750, name = "Tough Wolf Meat", q = 1 } })
+local printed = false
+for i = before + 1, #out do if out[i]:find("[debug]", 1, true) then printed = true end end
+check("/drops debug prints each loot window", printed)
+SlashCmdList.MOLDYDROPS("debug")
 
 -- reset clears everything you recorded (last, since it wipes the test data)
 SlashCmdList.MOLDYDROPS("reset")

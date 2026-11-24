@@ -36,7 +36,7 @@ end
 function ns.LuckTag(itemID)
   local ctx = ns.lootContext
   if not ctx or GetTime() - ctx.at > CONTEXT_SECONDS then return nil end
-  local npcID = ctx.items[itemID]
+  local npcID = ctx.npcID -- one loot window = one mob
   if not npcID then return nil end
   local pct = ChanceOf(ctx.section, npcID, itemID)
   if not pct then return nil end
@@ -45,16 +45,8 @@ function ns.LuckTag(itemID)
   end
 end
 
--- "You receive loot: " in the client's language (from "You receive loot: %s.").
-local function SelfLootPrefixes()
-  local out = {}
-  for _, fmt in ipairs({ LOOT_ITEM_SELF, LOOT_ITEM_SELF_MULTIPLE }) do
-    local prefix = type(fmt) == "string" and fmt:match("^(.-)%%s")
-    if prefix and prefix ~= "" then out[#out + 1] = prefix end
-  end
-  if #out == 0 then out[1] = "You receive loot: " end
-  return out
-end
+-- "You receive loot: " in the client's language (shared with the recorder).
+local function SelfLootPrefixes() return ns.SelfLootPrefixes() end
 
 -- Rewrites one loot message, or returns nil to leave it alone.
 function ns.AddLuckToMessage(msg)

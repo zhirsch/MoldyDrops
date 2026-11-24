@@ -17,6 +17,7 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops stats` | Prints the state of the database |
 | `/drops tooltip` | Turns the tooltip on or off |
 | `/drops luck` | Turns the luck tags on your loot messages on or off |
+| `/drops debug` | Prints what each loot window recorded, to check that recording works |
 | `/drops instances` | Also shows the tooltip in dungeons and raids (off by default) |
 | `/drops reset` | Deletes the loot, gathering and pick pocketing you've recorded |
 
@@ -45,6 +46,7 @@ For each mob, the addon uses the first of these that applies:
 Recording rules, which keep the rates unbiased:
 - It records only while you're solo, because in a group other people loot corpses you never see.
 - A kill counts when you loot the corpse, or when a mob you were fighting dies and its corpse turns out to be empty. Corpses you skip aren't counted.
+- Each loot window is one mob (WoW Forever has no area looting). Items are read from the loot window as soon as it's ready, and from your "You receive loot:" chat lines, so fast autoloot can't hide them. If the window is already empty, the loot is credited to the dead mob you're targeting or pointing at.
 - WoW Forever doesn't let addons read the combat log, so deaths are spotted through your target, focus, mouseover and enemy nameplates. Turn on enemy nameplates (default key: V) so empty corpses of mobs you weren't targeting are counted too.
 - Pick pocketing, skinning, gathering and fishing are ignored.
 
