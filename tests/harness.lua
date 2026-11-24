@@ -610,6 +610,11 @@ do
   tipLines, shows = 0, 0
   GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
   check("unit frame tooltip (target frame): loot added", tipLines > 3 and shows == 1)
+  ns.Tooltip.nativeBuild = true -- TooltipDataProcessor clients show the tooltip themselves
+  tipLines, shows = 0, 0
+  GameTooltip.hook_OnTooltipSetUnit(GameTooltip)
+  check("modern clients: loot added without calling Show() mid-build", tipLines > 3 and shows == 0)
+  ns.Tooltip.nativeBuild = nil
   units.target = nil
   GameTooltip.GetUnit = oldGetUnit
   GameTooltip.Show, GameTooltip.SetUnit, GameTooltip.IsShown, GameTooltip.GetOwner = oldShow, oldSetUnit, oldIsShown, oldOwner

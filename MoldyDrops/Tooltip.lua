@@ -504,7 +504,11 @@ local function AddLoot(tooltip, unit)
     end
     added = true
   end
-  if added then tooltip:Show() end
+  -- Older clients (OnTooltipSetUnit) need Show() to resize after adding
+  -- lines. With TooltipDataProcessor the game shows the tooltip itself after
+  -- the post-calls; calling Show() from inside its build fires every addon's
+  -- OnShow mid-rebuild, which unit frames trigger every 0.2s while hovered.
+  if added and not Tooltip.nativeBuild then tooltip:Show() end
 end
 
 local function OnTooltipSetUnit(tooltip)
@@ -530,6 +534,7 @@ end
 function Tooltip:Init()
   if TooltipDataProcessor and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Unit then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, OnTooltipSetUnit)
+    Tooltip.nativeBuild = true
   else
     GameTooltip:HookScript("OnTooltipSetUnit", OnTooltipSetUnit)
   end
