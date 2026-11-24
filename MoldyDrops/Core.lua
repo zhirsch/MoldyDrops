@@ -2,8 +2,18 @@ local ADDON, ns = ...
 
 ns.PREFIX = "|cffffd100MoldyDrops:|r "
 ns.MIN_SAMPLE = 20   -- kills needed before observed rates replace the 1.12 estimate
-ns.TOP_N = 5         -- rows in the tooltip
-ns.WINDOW_N = 10     -- rows in the /drops search window
+ns.TOP_N_DEFAULT = 5 -- drop rows in the tooltip (setting: settings.topN)
+ns.TOP_N_MAX = 10    -- the bundled 1.12 data keeps each mob's top 10
+ns.WINDOW_N = 10     -- at least this many rows in the /drops search window
+
+-- How many drop rows the tooltip shows.
+function ns.TopN()
+  local n = ns.db and tonumber(ns.db.settings.topN) or ns.TOP_N_DEFAULT
+  return math.max(1, math.min(ns.TOP_N_MAX, math.floor(n)))
+end
+
+-- How many drop rows the search window shows (never fewer than the tooltip).
+function ns.WindowN() return math.max(ns.WINDOW_N, ns.TopN()) end
 
 function ns.Print(msg) print(ns.PREFIX .. msg) end
 
@@ -126,7 +136,7 @@ f:SetScript("OnEvent", function(self, _, name)
   InitDB()
   -- Start each part on its own, so an error in one (still reported through
   -- the normal error handler) doesn't stop the others.
-  for _, part in ipairs({ ns.Tooltip, ns.Recorder }) do
+  for _, part in ipairs({ ns.Tooltip, ns.Recorder, ns.Options }) do
     xpcall(function() part:Init() end, geterrorhandler())
   end
 end)
@@ -187,6 +197,7 @@ local HELP = {
   "|cffffffff/drops item <item name>|r - find an item and show the mobs that drop it (short: /drop i)",
   "|cffffffff/drops export|r - copy your recorded loot to upload to the website",
   "|cffffffff/drops import|r - paste community data from the website",
+  "|cffffffff/drops options|r - open the options window",
   "|cffffffff/drops stats|r - show the state of the database",
   "|cffffffff/drops tooltip|r - turn the tooltip on or off",
   "|cffffffff/drops luck|r - turn the (Lucky!) tags on loot messages on or off",
@@ -213,6 +224,8 @@ SlashCmdList.MOLDYDROPS = function(msg)
   elseif cmd == "tooltip" then
     db.settings.enabled = not db.settings.enabled
     ns.Print(db.settings.enabled and "tooltip enabled" or "tooltip disabled")
+  elseif cmd == "options" or cmd == "config" then
+    ns.ShowOptions()
   elseif cmd == "debug" then
     db.settings.debug = not db.settings.debug
     ns.Print(db.settings.debug and "debug on: each loot window prints what was recorded" or "debug off")
@@ -238,4 +251,6 @@ SlashCmdList.MOLDYDROPS = function(msg)
     -- Not a subcommand: treat the whole text as a mob search ("/drops defias thug").
     ns.ShowSearch((msg:gsub("^%s+", ""):gsub("%s+$", "")))
   end
+  -- Keep the options window in step with settings changed by commands.
+  if ns.Options then ns.Options.Refresh() end
 end

@@ -14,6 +14,7 @@ Copy the `MoldyDrops` folder into `World of Warcraft\_forever_\Interface\AddOns\
 | `/drops item <item name>` | Opens a window that finds items by name and lists the mobs that drop them, highest chance first |
 | `/drops export` | Opens a window with your recorded loot as a string to upload |
 | `/drops import` | Opens a window to paste community data from the website |
+| `/drops options` | Opens MoldyDrops in the game's Options > AddOns panel: tooltip on/off, how many items the tooltip shows (1-10), dungeons and raids, luck tags, debug |
 | `/drops stats` | Prints the state of the database |
 | `/drops tooltip` | Turns the tooltip on or off |
 | `/drops luck` | Turns the luck tags on your loot messages on or off |
@@ -76,5 +77,7 @@ The window and frame code (`ExportUI.lua`, the UI half of `Search.lua`) isn't co
 ## License
 
 MoldyDrops is licensed under the [GNU General Public License v3.0](LICENSE).
+
+`MoldyDrops/Libs` bundles [Ace3](https://www.wowace.com/projects/ace3) (LibStub, CallbackHandler, AceGUI, AceConfig) under its own BSD-style license.
 
 `MoldyDrops/BaseData.lua` is generated from the [CMaNGOS classic-db](https://github.com/cmangos/classic-db) loot tables, which are also GPL-3.0. World of Warcraft names and game data are trademarks and copyrights of Blizzard Entertainment. This project isn't affiliated with Blizzard or CMaNGOS.

@@ -363,7 +363,7 @@ local function AddLoot(tooltip, unit)
   if not npcID then return end
   local expand = ns.ShiftHeld()
   local added = false
-  local rows, source = Tooltip.DropSection(npcID, ns.TOP_N, expand)
+  local rows, source = Tooltip.DropSection(npcID, ns.TopN(), expand)
   if #rows > 0 then
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine("Drops", source or "1.12 estimate", GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
@@ -377,7 +377,7 @@ local function AddLoot(tooltip, unit)
     local kind, rows, note = s[1], s[2], s[3]
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine(ns.GATHER_NAMES[kind] or "Gathering", note, GOLD[1], GOLD[2], GOLD[3], GREY[1], GREY[2], GREY[3])
-    for i = 1, math.min(ns.TOP_N, #rows) do
+    for i = 1, math.min(ns.TopN(), #rows) do
       local name, quality = ns.ItemInfo(rows[i][1])
       local qty = ns.QtyText(Tooltip.Qty(kind == ns.PICKPOCKET and "pick" or "gather", npcID, rows[i][1]))
       tooltip:AddDoubleLine(QualityHex(quality or 1) .. name .. "|r" .. qty, ColoredPct(rows[i][2], quality), 1, 1, 1, 1, 1, 1)

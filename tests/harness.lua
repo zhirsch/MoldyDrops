@@ -26,6 +26,18 @@ end
 function wipe(t) for k in pairs(t) do t[k] = nil end return t end
 tinsert = table.insert
 UISpecialFrames = {}
+-- Ace3 and the Settings API, faked: the addon's options are checked through them.
+local aceRegistered, aceBlizAdded, aceNotified, aceOpened, openedCategory = {}, nil, nil, nil, nil
+local aceLibs = {
+  ["AceConfig-3.0"] = { RegisterOptionsTable = function(_, app, t) aceRegistered[app] = t end },
+  ["AceConfigDialog-3.0"] = {
+    AddToBlizOptions = function(_, app, name) aceBlizAdded = name; return {}, 42 end,
+    Open = function(_, app) aceOpened = app end,
+  },
+  ["AceConfigRegistry-3.0"] = { NotifyChange = function(_, app) aceNotified = app end },
+}
+LibStub = setmetatable({}, { __call = function(_, name) return aceLibs[name] end })
+Settings = { OpenToCategory = function(id) openedCategory = id end }
 LOOT_ITEM_SELF = "You receive loot: %s."
 LOOT_ITEM_SELF_MULTIPLE = "You receive loot: %sx%d."
 local chatFilters = {}
@@ -60,6 +72,13 @@ function CreateFrame(_, name)
   end
   f.IsShown = function(self) return self.shown end
   f.SetShown = function(self, v) if v then self:Show() else self:Hide() end end
+  f.SetChecked = function(self, v) self.checked = v and true or false end
+  f.GetChecked = function(self) return self.checked end
+  f.SetValue = function(self, v) -- like the client, SetValue fires OnValueChanged
+    self.value = v
+    if rawget(self, "OnValueChanged") then self.OnValueChanged(self, v) end
+  end
+  f.GetValue = function(self) return self.value end
   f.left, f.top = 300, 700
   f.GetLeft = function(self) return self.left end
   f.GetTop = function(self) return self.top end
@@ -842,6 +861,43 @@ for _, r in ipairs(qrows) do if r[1] == 884 then hasRib = true end end
 check("quest items already recorded are hidden", not hasRib and qrows[1] and qrows[1][1] == 2589)
 MoldyDropsDB.own[999001] = nil
 
+-- options (AceConfig): registered in the game's settings, opened by /drops options
+check("options table registered with AceConfig", type(aceRegistered.MoldyDrops) == "function")
+check("options added to the game's AddOns settings", aceBlizAdded == "MoldyDrops")
+SlashCmdList.MOLDYDROPS("options")
+check("/drops options opens the game's options at MoldyDrops", openedCategory == 42, openedCategory)
+local opts = aceRegistered.MoldyDrops()
+local a = opts.args
+check("options include every setting", a.enabled and a.instances and a.luck and a.debug and a.topN
+  and a.topN.type == "range" and a.topN.min == 1 and a.topN.max == 10 and a.topN.step == 1)
+local function dropItemRows(npcID)
+  local n = 0
+  for _, r in ipairs(ns.Tooltip.DropSection(npcID, ns.TopN(), false)) do
+    if r[3] and r[3][3] == nil then n = n + 1 end
+  end
+  return n
+end
+check("default: 5 items in the tooltip", a.topN.get() == 5 and dropItemRows(7044) == 5)
+a.topN.set(nil, 3)
+check("range sets the tooltip item count", ns.TopN() == 3 and dropItemRows(7044) == 3 and a.topN.get() == 3)
+a.topN.set(nil, 5)
+a.luck.set(nil, false)
+check("toggle changes the setting", MoldyDropsDB.settings.luck == false and a.luck.get() == false)
+aceNotified = nil
+SlashCmdList.MOLDYDROPS("luck")
+check("slash command refreshes the options panel", MoldyDropsDB.settings.luck == true and aceNotified == "MoldyDrops")
+a.instances.set(nil, true)
+check("dungeons and raids option flips open-world-only", MoldyDropsDB.settings.openWorldOnly == false and a.instances.get() == true)
+a.instances.set(nil, false)
+a.enabled.set(nil, false)
+check("tooltip toggle", MoldyDropsDB.settings.enabled == false)
+a.enabled.set(nil, true)
+local realOpen = Settings.OpenToCategory
+Settings.OpenToCategory = function() error("not available") end
+aceOpened = nil
+ns.ShowOptions()
+check("falls back to AceConfig's own window", aceOpened == "MoldyDrops")
+Settings.OpenToCategory = realOpen
 -- reset clears everything you recorded (last, since it wipes the test data)
 SlashCmdList.MOLDYDROPS("reset")
 check("reset without confirm keeps data", next(MoldyDropsDB.own) ~= nil)
