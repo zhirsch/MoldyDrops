@@ -679,6 +679,35 @@ do
   s.modifierKey = "CTRL"
 end
 
+-- secret values (instances, some combat tooltips): never passed to the game or compared
+do
+  local SECRET = setmetatable({}, { __tostring = function() return "<secret>" end })
+  local realIsPlayer, realGetUnit, realGUID = UnitIsPlayer, GameTooltip.GetUnit, UnitGUID
+  issecretvalue = function(v) return v == SECRET end
+  -- like the client: a secret argument is an error
+  UnitIsPlayer = function(u) if u == SECRET then error("Secret values are only allowed during untainted execution") end return false end
+  GameTooltip.GetUnit = function() return SECRET, SECRET end
+  local nerr = #errors
+  local okTip, errTip = pcall(hover, 6, false)
+  check("a secret unit token: no error, and the mouseover unit is used instead", okTip and errTip > 3, errTip)
+  units.mouseover = nil
+  tipLines = 0
+  okTip, errTip = pcall(GameTooltip.hook_OnTooltipSetUnit, GameTooltip)
+  check("a secret unit token and no mouseover: nothing added, no error", okTip and tipLines == 0, errTip)
+  GameTooltip.GetUnit = realGetUnit
+  UnitGUID = function(u) if u == "mouseover" then return SECRET end return realGUID(u) end
+  okTip, errTip = pcall(hover, 6, false)
+  check("a secret GUID: nothing added, no error", okTip and errTip == 0, errTip)
+  UnitGUID = realGUID
+  local realIsShown = GameTooltip.IsShown
+  GameTooltip.IsShown = function() return true end
+  GameTooltip.GetUnit = function() return SECRET, SECRET end
+  local okMod = pcall(Fire, "MODIFIER_STATE_CHANGED", "LSHIFT", 1)
+  check("Shift with a secret unit token: no error", okMod and #errors == nerr)
+  GameTooltip.GetUnit, GameTooltip.IsShown = realGetUnit, realIsShown
+  UnitIsPlayer, issecretvalue = realIsPlayer, nil
+end
+
 -- /drops item opens the item search; the old name is gone
 local iw = FrameNamed("MoldyDropsItemSearchFrame")
 iw:Hide(); FrameNamed("MoldyDropsSearchFrame"):Hide()

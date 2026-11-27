@@ -461,21 +461,30 @@ function Tooltip.StillLive(tooltip, unit)
   return live and true or false
 end
 
+-- WoW Forever hides some values from addons (in instances, and for some
+-- tooltips in combat): a "secret" unit token, GUID or result can't be
+-- compared, split or passed to most Unit* functions, which raise an error.
+local function Secret(v) return issecretvalue and issecretvalue(v) or false end
+
 local function AddLoot(tooltip, unit)
   local db = ns.db
   if not db or not db.settings.enabled then return end
-  if not unit or UnitIsPlayer(unit) then return end
+  if db.settings.openWorldOnly and IsInInstance() then return end
+  if not unit or Secret(unit) then return end
+  local isPlayer = UnitIsPlayer(unit)
+  if Secret(isPlayer) or isPlayer then return end
   -- Don't touch a tooltip that's on its way out (see StillLive).
   if not Tooltip.StillLive(tooltip, unit) then return end
   -- Guards, vendors and other NPCs you can't attack: nothing to loot.
   if UnitCanAttack then
     local canAttack = UnitCanAttack("player", unit)
-    if not (issecretvalue and issecretvalue(canAttack)) and not canAttack then return end
+    if not Secret(canAttack) and not canAttack then return end
   end
-  if db.settings.openWorldOnly and IsInInstance() then return end
   if not ns.TooltipModifierOk() then return end
 
-  local npcID = ns.NpcIDFromGUID(UnitGUID(unit))
+  local guid = UnitGUID(unit)
+  if Secret(guid) then return end
+  local npcID = ns.NpcIDFromGUID(guid)
   if not npcID then return end
   local expand = ns.ShiftHeld()
   local added = false
@@ -508,7 +517,12 @@ end
 local function OnTooltipSetUnit(tooltip)
   if tooltip ~= GameTooltip then return end
   local _, unit = tooltip:GetUnit()
-  if not unit and UnitExists("mouseover") then unit = "mouseover" end
+  -- A secret token is no use; the mouseover unit may still be readable.
+  if Secret(unit) then unit = nil end
+  if not unit then
+    local exists = UnitExists("mouseover")
+    if exists and not Secret(exists) then unit = "mouseover" end
+  end
   AddLoot(tooltip, unit)
 end
 
@@ -525,6 +539,7 @@ local function OnModifierChanged(key)
   if not shift and not held then return end
   if GameTooltip:IsShown() then
     local _, unit = GameTooltip:GetUnit()
+    if Secret(unit) then unit = nil end
     -- Only while you're still pointing at it: SetUnit on a fading tooltip
     -- (mouse moved away, corpse despawned) would make it stick.
     if Tooltip.StillLive(GameTooltip, unit) then GameTooltip:SetUnit(unit) end
